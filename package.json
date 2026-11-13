@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "npm run dev -w @yutverse/web -- --host 0.0.0.0",
     "build": "npm run check -w @yutverse/server && npm run build -w @yutverse/web",
-    "test": "tsx --test packages/engine/src/*.test.ts apps/server/src/*.test.ts",
+    "test": "tsx --test packages/engine/src/*.test.ts apps/server/src/*.test.ts scripts/*.test.mjs",
     "dev:server": "npm run dev -w @yutverse/server",
     "start": "npm start -w @yutverse/server",
     "test:browser": "node scripts/browser-smoke.cjs",

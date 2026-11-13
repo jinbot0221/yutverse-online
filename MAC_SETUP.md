@@ -25,7 +25,7 @@ npm run deploy:quick
 
 ## Mac 설치 스크립트가 하는 일
 
-최신 공식 cloudflared Mac 실행 파일에서 최소 macOS 15를 확인했으므로 Monterey에 그 파일을 설치하지 않습니다. 대신 공식 Cloudflare 2025.11.1 소스의 고정 커밋 `690f20c008b4b6d2f12756618b9136ef6d5e2f18`을 가져와 Go 1.25.14로 CGO 없이 빌드합니다. 해당 버전을 선택한 이유는 Go 1.24를 요구하는 소스여서 Monterey 지원 Go 도구체인으로 빌드할 수 있기 때문입니다. 최신 cloudflared 2026.11.0 소스는 Go 1.27.4를 요구합니다. 이는 최신 Cloudflare 버전으로의 업데이트가 아니며 장기 유지 시 지원되는 OS/최신 도구로 옮겨야 합니다.
+최신 공식 cloudflared Mac 실행 파일에서 최소 macOS 15를 확인했으므로 Monterey에 그 파일을 설치하지 않습니다. 대신 공식 Cloudflare 2025.11.1 소스의 고정 커밋 `17533b124c225c9090ef1de5cd2ee201e8c398e8`을 가져와 Go 1.25.14로 CGO 없이 빌드합니다. 해당 버전을 선택한 이유는 Go 1.24를 요구하는 소스여서 Monterey 지원 Go 도구체인으로 빌드할 수 있기 때문입니다. 최신 cloudflared 2026.11.0 소스는 Go 1.27.4를 요구합니다. 이는 최신 Cloudflare 버전으로의 업데이트가 아니며 장기 유지 시 지원되는 OS/최신 도구로 옮겨야 합니다.
 
 - Go는 `go.dev` 공식 macOS Intel 아카이브를 고정 SHA256으로 검증한 뒤 저장소의 `.tools/monterey`에 설치합니다. 시스템 Node나 시스템 Go를 바꾸지 않습니다.
 - Cloudflare 소스는 공식 GitHub 태그를 복제하고 실제 커밋과 변경 없는 상태를 검사합니다. 저장소에 포함된 vendor 의존성으로 빌드합니다.
@@ -35,3 +35,7 @@ npm run deploy:quick
 - 이 클라우드에서는 별도의 DNS/TCP 제한 때문에 공개 주소 발급이 차단되어 있습니다. 이 스크립트는 사용자의 Mac에서 실행하기 위한 것이며 제한을 우회하지 않습니다.
 
 빌드나 실행이 실패하면 첫 오류 문구를 공유해 주세요. 인증서 검증을 끄거나 임의의 체크섬/OS 버전 패치를 적용하지 마세요.
+
+### 설치 중 source commit mismatch가 나온 경우
+
+초기 설치 스크립트가 주석 태그 자체의 객체 ID를 소스 커밋으로 잘못 비교하던 오류를 수정했습니다. 2025.11.1의 태그 객체는 `690f20c008b4b6d2f12756618b9136ef6d5e2f18`, 실제 커밋은 `17533b124c225c9090ef1de5cd2ee201e8c398e8`입니다. 이제 둘을 각각 검증합니다. 저장소에서 `git pull --ff-only origin main` 후 `npm run tunnel:install:mac`을 다시 실행하세요. 정상적으로 받아둔 Go와 소스를 재사용하며 `.tools` 폴더를 지울 필요가 없습니다.

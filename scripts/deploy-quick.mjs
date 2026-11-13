@@ -1,3 +1,4 @@
+import {CLOUDFLARED_SOURCE} from './cloudflared-source.mjs';
 import {spawn,execFileSync} from 'node:child_process';
 import {existsSync,readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {createHash} from 'node:crypto';
@@ -41,7 +42,7 @@ try{
  if(!existsSync(resolve(root,'apps/web/dist/index.html')))throw Error('Run npm run build first.');
  if(!existsSync(binary))throw Error(mac?'Run npm run tunnel:install:mac first.':'Run npm run tunnel:install first.');
  let expected='51f7c68b57ed7269164075d7e789efce5b59355982f06392deeb037d982a51fd';
- if(mac){const build=JSON.parse(readFileSync(resolve(root,'.tools/cloudflared-monterey.json'),'utf8'));if(build.commit!=='690f20c008b4b6d2f12756618b9136ef6d5e2f18'||build.goVersion!=='go1.25.14')throw Error('Unexpected Mac tunnel build.');expected=build.sha256;}
+ if(mac){const build=JSON.parse(readFileSync(resolve(root,'.tools/cloudflared-monterey.json'),'utf8'));if(build.commit!==CLOUDFLARED_SOURCE.commit||build.goVersion!=='go1.25.14')throw Error('Unexpected Mac tunnel build.');expected=build.sha256;}
  if(createHash('sha256').update(readFileSync(binary)).digest('hex')!==expected)throw Error('Cloudflared checksum mismatch.');
  await new Promise((ready,reject)=>{const listener=createServer();listener.once('error',reject);listener.listen(port,'127.0.0.1',()=>listener.close(ready));});
  app=spawn(process.execPath,['--import','tsx',resolve(root,'apps/server/src/index.ts')],{cwd:root,env:{...process.env,NODE_ENV:'production',PORT:String(port),YUTVERSE_BIND_HOST:'127.0.0.1',YUTVERSE_DATA_DIR:dataDir},stdio:['ignore','inherit','inherit']});

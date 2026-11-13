@@ -1,3 +1,4 @@
+import {CLOUDFLARED_SOURCE,verifyCloudflaredSource} from './cloudflared-source.mjs';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {existsSync,mkdirSync,readFileSync,writeFileSync,rmSync,mkdtempSync,renameSync,chmodSync} from 'node:fs';
@@ -7,7 +8,7 @@ import {fileURLToPath} from 'node:url';
 // Official 2025.11.1 source and Go's last Monterey-compatible major line.
 // Modern prebuilt cloudflared Mac binaries target macOS 15; build pure Go here.
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
-const commit='690f20c008b4b6d2f12756618b9136ef6d5e2f18';
+const {commit}=CLOUDFLARED_SOURCE;
 const goVersion='go1.25.14';
 const goChecksum='b09087a67d5792a8b0fcbf74212d62560c94ac8a8fd750ff920d8cb5f1e20118';
 const tools=resolve(root,'.tools/monterey');
@@ -36,9 +37,7 @@ try{
  if(!installed.includes(` ${goVersion} `))throw Error('Unexpected cached Go compiler version.');
  const source=resolve(tools,'source');
  if(!existsSync(source))run('git',['clone','--depth','1','--branch','2025.11.1','https://github.com/cloudflare/cloudflared.git',source]);
- const head=execFileSync('git',['-C',source,'rev-parse','HEAD'],{encoding:'utf8'}).trim();
- if(head!==commit)throw Error('Cloudflared source commit mismatch.');
- if(execFileSync('git',['-C',source,'status','--porcelain'],{encoding:'utf8'}).trim())throw Error('Cached source has local changes; refusing to build it.');
+ verifyCloudflaredSource(source);
  const binary=resolve(root,'.tools/cloudflared-monterey');
  console.log('Building cloudflared 2025.11.1 for macOS 12+. This first build can take several minutes.');
  run(compiler,['build','-p','2','-mod=vendor','-buildvcs=false','-trimpath','-ldflags','-X main.Version=2025.11.1 -X main.BuildTime=source-monterey','-o',binary,'./cmd/cloudflared'],{
