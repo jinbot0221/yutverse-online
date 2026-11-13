@@ -108,3 +108,5 @@ npm run test:browser # 개발 서버 두 개 실행 후, 시스템 Chromium으�
 
 임시 공개 배포 실행기를 추가했습니다: `npm run tunnel:install` → `npm run deploy:quick`.
 현재 클라우드의 DNS/아웃바운드 정책 때문에 터널 발급은 차단되어 **공개 URL은 아직 없습니다**. 필요한 네트워크 설정, 검증 상태와 재개 절차는 [DEPLOYMENT.md](DEPLOYMENT.md)를 참고하세요.
+
+Intel Mac / Monterey 사용자는 [MAC_SETUP.md](MAC_SETUP.md)를 참고하세요. `npm run tunnel:install:mac`은 Monterey 호환 Go 도구체인으로 공식 Cloudflare 소스를 빌드하며, 사용 중인 Node.js를 교체하지 않습니다. Mac 실기에서의 공개 접속 검증은 아직 남아 있습니다.

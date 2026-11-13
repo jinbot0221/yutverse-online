@@ -6,7 +6,8 @@ import {fileURLToPath} from 'node:url';
 import {createServer} from 'node:net';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
-const binary=resolve(root,'.tools/cloudflared-2026.11.0');
+const mac=process.platform==='darwin';
+const binary=resolve(root,mac?'.tools/cloudflared-monterey':'.tools/cloudflared-2026.11.0');
 const port=Number(process.env.YUTVERSE_PUBLIC_PORT||3003);
 const dataDir=resolve(process.env.YUTVERSE_PUBLIC_DATA_DIR||resolve(root,'data/public'));
 const origin=`http://127.0.0.1:${port}`;
@@ -38,8 +39,10 @@ try{
  if(Number(process.versions.node.split('.')[0])<24)throw Error('Node 24+ is required.');
  if(!Number.isInteger(port)||port<1024||port>65535)throw Error('YUTVERSE_PUBLIC_PORT must be 1024..65535.');
  if(!existsSync(resolve(root,'apps/web/dist/index.html')))throw Error('Run npm run build first.');
- if(!existsSync(binary))throw Error('Run npm run tunnel:install first.');
- if(createHash('sha256').update(readFileSync(binary)).digest('hex')!=='51f7c68b57ed7269164075d7e789efce5b59355982f06392deeb037d982a51fd')throw Error('Cloudflared checksum mismatch.');
+ if(!existsSync(binary))throw Error(mac?'Run npm run tunnel:install:mac first.':'Run npm run tunnel:install first.');
+ let expected='51f7c68b57ed7269164075d7e789efce5b59355982f06392deeb037d982a51fd';
+ if(mac){const build=JSON.parse(readFileSync(resolve(root,'.tools/cloudflared-monterey.json'),'utf8'));if(build.commit!=='690f20c008b4b6d2f12756618b9136ef6d5e2f18'||build.goVersion!=='go1.25.14')throw Error('Unexpected Mac tunnel build.');expected=build.sha256;}
+ if(createHash('sha256').update(readFileSync(binary)).digest('hex')!==expected)throw Error('Cloudflared checksum mismatch.');
  await new Promise((ready,reject)=>{const listener=createServer();listener.once('error',reject);listener.listen(port,'127.0.0.1',()=>listener.close(ready));});
  app=spawn(process.execPath,['--import','tsx',resolve(root,'apps/server/src/index.ts')],{cwd:root,env:{...process.env,NODE_ENV:'production',PORT:String(port),YUTVERSE_BIND_HOST:'127.0.0.1',YUTVERSE_DATA_DIR:dataDir},stdio:['ignore','inherit','inherit']});
  app.once('error',e=>fail(e.message));app.once('exit',code=>{if(!stopping)fail(`Application exited (${code}).`)});

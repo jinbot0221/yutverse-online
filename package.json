@@ -14,7 +14,8 @@
     "start": "npm start -w @yutverse/server",
     "test:browser": "node scripts/browser-smoke.cjs",
     "tunnel:install": "sh scripts/install-cloudflared.sh",
-    "deploy:quick": "node scripts/deploy-quick.mjs"
+    "deploy:quick": "node scripts/deploy-quick.mjs",
+    "tunnel:install:mac": "node scripts/install-cloudflared-mac.mjs"
   },
   "devDependencies": {
     "playwright": "^1.65.0",
