@@ -110,3 +110,7 @@ npm run test:browser # 개발 서버 두 개 실행 후, 시스템 Chromium으�
 현재 클라우드의 DNS/아웃바운드 정책 때문에 터널 발급은 차단되어 **공개 URL은 아직 없습니다**. 필요한 네트워크 설정, 검증 상태와 재개 절차는 [DEPLOYMENT.md](DEPLOYMENT.md)를 참고하세요.
 
 Intel Mac / Monterey 사용자는 [MAC_SETUP.md](MAC_SETUP.md)를 참고하세요. `npm run tunnel:install:mac`은 Monterey 호환 Go 도구체인으로 공식 Cloudflare 소스를 빌드하며, 사용 중인 Node.js를 교체하지 않습니다. Mac 실기에서의 공개 접속 검증은 아직 남아 있습니다.
+
+게임 화면은 브라우저 전체 크기로 표시하며, 상단 `전체화면`으로 지원 브라우저의 전체화면 모드에 진입할 수 있습니다. AI 난이도·저사양 모드·싱글 새 경기는 `설정`, 보유 카드는 `나의 증강`에서 엽니다. 큰 캐릭터·플레이어 색상·이름표·선택 테두리를 표시하고, 업은 말은 한 캐릭터와 `×N` 배지로 표시합니다. `npm run test:game-view`는 실행 중인 테스트 서버에서 PC/모바일 세로/가로 화면 크기, 말 표시, 직접 3D 말 선택, 전체화면 전환을 검사합니다 (`YUTVERSE_URL`, `CHROMIUM_PATH` 설정 가능).
+
+Mac에서 터널을 유지하면서 화면만 업데이트하려면 실행 중인 터미널은 그대로 두고 **다른 터미널**의 저장소 폴더에서 `git pull --ff-only origin main`, `npm run build`를 실행한 뒤 브라우저를 새로고침하세요. 이 UI 변경에는 서버 재시작이 필요 없으므로 터널이 계속 실행 중이면 같은 주소를 사용할 수 있습니다.

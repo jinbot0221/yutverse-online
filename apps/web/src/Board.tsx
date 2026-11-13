@@ -1,8 +1,87 @@
-import {Canvas} from '@react-three/fiber';
+import {useEffect,useRef} from 'react';
+import {Canvas,useThree,useFrame} from '@react-three/fiber';
 import {OrbitControls,Line} from '@react-three/drei';
+import {OrthographicCamera,Vector3} from 'three';
 import {legalMoves,position,HOME,DONE,type State} from '@yutverse/engine';
-const colors=['#ffbd69','#8fdac2','#b6a4ff','#ff8eac'];
+
+const colors=['#ffbe32','#48dfb0','#69a9ff','#ff79c6'];
 const nodes=[...Array.from({length:20},(_,i)=>`o${i+1}`),'a1','a2','b1','b2','c','d1','d2','e1','e2'];
+
+function FitCamera(){
+ const {camera,size}=useThree();
+ useEffect(()=>{
+  if(!(camera instanceof OrthographicCamera))return;
+  const portrait=size.width<=760&&size.height>500;
+  const compact=size.height<=500;
+  const side=portrait?0:compact?250:334;
+  const top=portrait?145:compact?70:110;
+  const bottom=portrait?200:80;
+  camera.zoom=Math.max(8,Math.min((size.width-side-28)/17.7,(size.height-top-bottom)/16.5));
+  camera.setViewOffset(size.width,size.height,side/2,(bottom-top)/2,size.width,size.height);
+  camera.updateProjectionMatrix();
+ },[camera,size.width,size.height]);
+ return null;
+}
+
+function homePosition(player:number,index:number):[number,number]{
+ const along=-3.45+index*2.3;
+ return player===0?[along,7.3]:player===1?[-7.3,along]:player===2?[along,-7.3]:[7.3,along];
+}
+
+function Token({x,z,color,label,selectable,stack,onClick}:{x:number;z:number;color:string;label:string;selectable:boolean;stack:number;onClick:()=>void}){
+ return <group position={[x,.16,z]} scale={1.18} onClick={e=>{e.stopPropagation();if(selectable)onClick()}} onPointerOver={()=>{if(selectable)document.body.style.cursor='pointer'}} onPointerOut={()=>{document.body.style.cursor=''}}>
+  <mesh position={[0,-.055,0]}><cylinderGeometry args={[.68,.74,.12,24]}/><meshStandardMaterial color="#102c36"/></mesh>
+  <mesh><cylinderGeometry args={[.6,.64,.17,24]}/><meshStandardMaterial color={color} roughness={.45}/></mesh>
+  <mesh rotation={[-Math.PI/2,0,0]} position={[0,.1,0]}><ringGeometry args={[.49,.57,32]}/><meshBasicMaterial color="white"/></mesh>
+  <mesh castShadow position={[0,.5,0]}><capsuleGeometry args={[.34,.38,4,12]}/><meshStandardMaterial color={color} roughness={.55}/></mesh>
+  <mesh castShadow position={[0,1.17,0]}><sphereGeometry args={[.47,18,16]}/><meshStandardMaterial color={color} roughness={.5}/></mesh>
+  <mesh position={[0,1.12,.37]}><sphereGeometry args={[.28,14,12]}/><meshStandardMaterial color="#fff3db"/></mesh>
+  {[-.17,.17].map(a=><group key={a}><mesh position={[a,1.26,.42]}><sphereGeometry args={[.075,10,10]}/><meshBasicMaterial color="#12242a"/></mesh><mesh position={[a-.02,1.29,.47]}><sphereGeometry args={[.023,8,8]}/><meshBasicMaterial color="white"/></mesh><mesh castShadow position={[a*1.7,1.67,0]}><coneGeometry args={[.15,.42,10]}/><meshStandardMaterial color={color}/></mesh></group>)}
+  <mesh position={[0,1.08,.63]}><sphereGeometry args={[.065,8,8]}/><meshBasicMaterial color="#243b44"/></mesh>
+  {selectable&&<mesh rotation={[-Math.PI/2,0,0]} position={[0,-.1,0]}><ringGeometry args={[.77,.91,40]}/><meshBasicMaterial color="#fff4a5" toneMapped={false}/></mesh>}
+
+ </group>;
+}
+
+type VisibleToken={key:string;index:number;x:number;z:number;color:string;label:string;selectable:boolean;stack:number};
+function ProjectLabels({tokens,elements}:{tokens:VisibleToken[];elements:Map<string,HTMLDivElement>}){
+ const point=useRef(new Vector3());
+ useFrame(({camera,size})=>{
+  for(const token of tokens){
+   const element=elements.get(token.key);if(!element)continue;
+   point.current.set(token.x,2.65,token.z).project(camera);
+   const x=(point.current.x+1)*size.width/2,y=(1-point.current.y)*size.height/2;
+   element.style.transform=`translate3d(${x}px,${y}px,0) translate(-50%,-50%)`;
+   element.style.visibility=point.current.z<-1||point.current.z>1?'hidden':'visible';
+  }
+ });return null;
+}
+
 export function Board({s,onMove,low,me}:{s:State;onMove:(i:number)=>void;low:boolean;me:number}){
- const legal=legalMoves(s);return <Canvas shadows={!low} camera={{position:[14,18,17],fov:43}} dpr={low?1:[1,1.5]}><color attach="background" args={['#122e30']}/><ambientLight intensity={1.4}/><directionalLight position={[4,12,6]} intensity={2} castShadow={!low}/><mesh rotation={[-Math.PI/2,0,0]} receiveShadow><planeGeometry args={[40,40]}/><meshStandardMaterial color="#122e30"/></mesh><mesh position={[0,-.23,0]} receiveShadow><boxGeometry args={[12,.4,12]}/><meshStandardMaterial color="#30544e" roughness={.8}/></mesh>{[["o20","o5","o10","o15","o20"],["o5","c","o15"],["o10","c","o20"]].map((path,i)=><Line key={i} points={path.map(n=>{const [x,z]=position(n);return [x,.03,z]})} color="#92b1a0" lineWidth={2}/>)}{nodes.map(n=>{const [x,z]=position(n);return <mesh key={n} rotation={[-Math.PI/2,0,0]} position={[x,.05,z]}><circleGeometry args={[n==='c'||['o5','o10','o15','o20'].includes(n)?.42:.23,24]}/><meshStandardMaterial color="#d6d6b0"/></mesh>})}{s.players.flatMap((p,j)=>p.pieces.map((piece,i)=>{if(piece.node===DONE)return null;let [x,z]=position(piece.node);const offset=piece.node===HOME?i*.65: i*.16;x+=offset+(piece.node===HOME?j*.7:0);z+=piece.node===HOME?j*.7: j*.15;const selectable=j===me&&s.turn===me&&legal.includes(i);return <group key={`${j}-${i}`} position={[x,.15,z]} onClick={e=>{e.stopPropagation();if(selectable)onMove(i)}}><mesh castShadow position={[0,.35,0]}><capsuleGeometry args={[.26,.3,4,8]}/><meshStandardMaterial color={colors[j]} emissive={selectable?colors[j]:'#000'} emissiveIntensity={.25}/></mesh><mesh position={[0,.85,0]} castShadow><sphereGeometry args={[.36,12,12]}/><meshStandardMaterial color={colors[j]}/></mesh>{[-.14,.14].map(a=><mesh key={a} position={[a,.92,.31]}><sphereGeometry args={[.055,8,8]}/><meshBasicMaterial color="#152a2c"/></mesh>)}<mesh position={[0,1.2,0]}><coneGeometry args={[.4,.3,12]}/><meshStandardMaterial color="#faf1d6"/></mesh></group>}))}<OrbitControls makeDefault minDistance={12} maxDistance={35} maxPolarAngle={Math.PI/2.3} target={[1,0,1]}/></Canvas>
+ const legal=legalMoves(s),elements=useRef(new Map<string,HTMLDivElement>()).current;
+ const tokens:VisibleToken[]=s.players.flatMap((p,j)=>{
+  if(s.forfeited.includes(j))return [];
+  const rendered=new Set<string>();
+  return p.pieces.flatMap((piece,i)=>{
+   if(piece.node===DONE)return [];
+   const atHome=piece.node===HOME;if(!atHome&&rendered.has(piece.node))return [];rendered.add(piece.node);
+   let [x,z]=atHome?homePosition(j,i):position(piece.node);
+   const shared=!atHome&&s.players.some((other,k)=>k!==j&&!s.forfeited.includes(k)&&other.pieces.some(q=>q.node===piece.node));
+   if(shared){x+=(j%2===0?-.5:.5);z+=(j<2?-.3:.3);}
+   return [{key:`${j}-${i}`,index:i,x,z,color:colors[j],label:`${j===me?'나':p.name.replace(/^AI /,'AI')} · ${i+1}`,selectable:j===me&&s.turn===me&&legal.includes(i),stack:atHome?1:p.pieces.filter(q=>q.node===piece.node).length}];
+  });
+ });
+ return <div className="board-render"><Canvas orthographic shadows={!low} camera={{position:[0,22,16],zoom:32,near:.1,far:150}} dpr={low?1:[1,1.5]}>
+  <FitCamera/>
+  <color attach="background" args={['#123b3e']}/>
+  <ambientLight intensity={1.9}/><directionalLight position={[6,14,10]} intensity={2.3} castShadow={!low} shadow-mapSize={[1024,1024]}/><directionalLight position={[-8,6,-6]} intensity={1.2}/>
+  <mesh rotation={[-Math.PI/2,0,0]} position={[0,-.4,0]} receiveShadow><planeGeometry args={[200,200]}/><meshStandardMaterial color="#123b3e"/></mesh>
+  <mesh position={[0,-.18,0]} receiveShadow><boxGeometry args={[11.9,.35,11.9]}/><meshStandardMaterial color="#3c7064" roughness={.85}/></mesh>
+  <mesh rotation={[-Math.PI/2,0,0]} position={[0,.005,0]}><ringGeometry args={[5.6,5.64,4]}/><meshBasicMaterial color="#799e82" transparent opacity={.25}/></mesh>
+  {[["o20","o5","o10","o15","o20"],["o5","c","o15"],["o10","c","o20"]].map((path,i)=><Line key={i} points={path.map(n=>{const [x,z]=position(n);return [x,.04,z]})} color="#dbebc6" lineWidth={3}/>)}
+  {nodes.map(n=>{const [x,z]=position(n);const corner=n==='c'||['o5','o10','o15','o20'].includes(n);return <group key={n} position={[x,.06,z]}><mesh rotation={[-Math.PI/2,0,0]}><circleGeometry args={[corner?.48:.3,28]}/><meshStandardMaterial color="#edf2d3"/></mesh>{corner&&<mesh rotation={[-Math.PI/2,0,0]} position={[0,.01,0]}><ringGeometry args={[.32,.37,28]}/><meshBasicMaterial color="#426b59"/></mesh>}</group>})}
+  {tokens.map(({key,...token})=><Token key={key} {...token} onClick={()=>onMove(token.index)}/>)}
+  <ProjectLabels tokens={tokens} elements={elements}/>
+  <OrbitControls makeDefault enablePan={false} minZoom={10} maxZoom={90} minPolarAngle={.1} maxPolarAngle={Math.PI/2.8} target={[0,0,0]}/>
+ </Canvas><div className="token-overlay" aria-hidden="true">{tokens.map(token=><div key={token.key} ref={el=>{if(el)elements.set(token.key,el);else elements.delete(token.key)}} className={`token-label ${token.selectable?'selectable':''}`} style={{borderColor:token.color}}><i style={{background:token.color}}/><span className="label-name">{token.label}</span>{token.stack>1&&<strong className="stack-count">×{token.stack}</strong>}{token.selectable&&<em>선택</em>}</div>)}</div></div>;
 }

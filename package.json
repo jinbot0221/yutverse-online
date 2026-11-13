@@ -15,7 +15,8 @@
     "test:browser": "node scripts/browser-smoke.cjs",
     "tunnel:install": "sh scripts/install-cloudflared.sh",
     "deploy:quick": "node scripts/deploy-quick.mjs",
-    "tunnel:install:mac": "node scripts/install-cloudflared-mac.mjs"
+    "tunnel:install:mac": "node scripts/install-cloudflared-mac.mjs",
+    "test:game-view": "node scripts/game-view-smoke.cjs"
   },
   "devDependencies": {
     "playwright": "^1.65.0",
