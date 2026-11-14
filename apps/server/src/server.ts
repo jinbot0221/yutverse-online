@@ -6,7 +6,7 @@ import {resolve} from 'node:path';
 import {createGame,throwYut,move,selectAugment,useAugment,skipMove,expireSelection,forfeit,type State} from '@yutverse/engine';
 import {Store} from './store.ts';
 export type Member={id:string;name:string;ready:boolean;connected:boolean;disconnectedAt:number|null;departed?:boolean};
-export type Room={code:string;matchId:string;capacity:3|4;owner:string;members:Member[];state:State|null;revision:number;actionDeadline:number|null;createdAt:number};
+export type Room={code:string;matchId:string;capacity:2|3|4;owner:string;members:Member[];state:State|null;revision:number;actionDeadline:number|null;createdAt:number};
 type Options={dbPath:string;random?:()=>number;now?:()=>number;graceMs?:number;turnMs?:number;staticDir?:string;webOrigin?:string};
 export function createGameServer(options:Options){
  const store=new Store(options.dbPath),app=express(),http=createServer(app);
@@ -65,7 +65,7 @@ export function createGameServer(options:Options){
   }catch(error){reply({ok:false,error:error instanceof Error?error.message:'요청에 실패했습니다.'});}});}
   function roomFor(){const r=[...rooms.values()].find(r=>r.members.some(m=>m.id===user.id&&!m.departed)&&r.state?.phase!=='over')||[...rooms.values()].find(r=>r.members.some(m=>m.id===user.id&&!m.departed));if(!r)throw Error('참가 중인 방이 없습니다.');return r;}
   handle('create',data=>{
-   if(findRoom(user.id))throw Error('이미 참가 중인 방이 있습니다.');for(const old of rooms.values())if(old.state?.phase==='over'){const member=old.members.find(m=>m.id===user.id);if(member)member.departed=true;}if(data.capacity!==3&&data.capacity!==4)throw Error('3인 또는 4인 방만 지원합니다.');
+   if(findRoom(user.id))throw Error('이미 참가 중인 방이 있습니다.');for(const old of rooms.values())if(old.state?.phase==='over'){const member=old.members.find(m=>m.id===user.id);if(member)member.departed=true;}if(data.capacity!==2&&data.capacity!==3&&data.capacity!==4)throw Error('2~4인 방만 지원합니다.');
    if(rooms.size>=200)throw Error('방이 가득 찼습니다.');
    let code='';do{code=Array.from({length:6},()=> 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[randomInt(32)]).join('');}while(rooms.has(code));
    const room:Room={code,matchId:randomUUID(),capacity:data.capacity,owner:user.id,members:[{...user,ready:false,connected:true,disconnectedAt:null}],state:null,revision:0,actionDeadline:null,createdAt:now()};rooms.set(code,room);publish(room);return {room:publicRoom(room,user.id)};

@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {io,type Socket} from 'socket.io-client';
 import type {State} from '@yutverse/engine';
-export type PublicRoom={code:string;capacity:3|4;owner:string;members:{id:string;name:string;ready:boolean;connected:boolean}[];state:State|null;revision:number;me:number;actionDeadline:number|null};
+export type PublicRoom={code:string;capacity:2|3|4;owner:string;members:{id:string;name:string;ready:boolean;connected:boolean}[];state:State|null;revision:number;me:number;actionDeadline:number|null};
 type Reply={ok:boolean;error?:string;room?:PublicRoom};
 function savedToken(){try{return localStorage.getItem('yutverse.token')||''}catch{return ''}}
 export function useOnline(enabled:boolean){

@@ -20,7 +20,7 @@ async function open(dbPath=':memory:',clock={time:1000000}){
 const request=(socket:Socket,event:string,data:object={}):Promise<Reply>=>socket.timeout(3000).emitWithAck(event,data);
 async function snapshot(socket:Socket){const r=await request(socket,'sync');assert.equal(r.ok,true,r.error);return r.room!;}
 async function action(socket:Socket,kind:string,extra:object={}){const room=await snapshot(socket);return request(socket,'act',{revision:room.revision,kind,...extra});}
-async function setupRoom(f:Awaited<ReturnType<typeof open>>,count:3|4){const users=[],clients=[];for(let i=0;i<count;i++){const user=await f.session(`여행자${i+1}`);users.push(user);clients.push(await f.connect(user.token));}
+async function setupRoom(f:Awaited<ReturnType<typeof open>>,count:2|3|4){const users=[],clients=[];for(let i=0;i<count;i++){const user=await f.session(`여행자${i+1}`);users.push(user);clients.push(await f.connect(user.token));}
  const made=await request(clients[0],'create',{capacity:count});assert.equal(made.ok,true,made.error);const code=made.room!.code;
  for(let i=1;i<count;i++)assert.equal((await request(clients[i],'join',{code})).ok,true);
  return {users,clients,code};
@@ -50,7 +50,7 @@ test('real sockets enforce membership, readiness, ownership, revision, selection
   assert.equal((await action(clients[0],'use',{id:'fake'})).ok,false);
  }finally{await f.close();}
 });
-for(const count of [3,4] as const)test(`${count}-player authoritative match finishes, broadcasts ranks and persists differential points exactly once`,async()=>{
+for(const count of [2,3,4] as const)test(`${count}-player authoritative match finishes, broadcasts ranks and persists differential points exactly once`,async()=>{
  const f=await open();try{
   const {clients}=await setupRoom(f,count);await start(clients);let actions=0;
   while(actions++<3000){pace(f);const r=await snapshot(clients[0]),s=r.state!;if(s.phase==='over')break;
@@ -61,7 +61,7 @@ for(const count of [3,4] as const)test(`${count}-player authoritative match fini
   const last=await snapshot(clients[0]);assert.equal(last.state!.phase,'over');assert.equal(new Set(last.state!.ranks).size,count);
   for(const c of clients)assert.deepEqual((await snapshot(c)).state!.ranks,last.state!.ranks);
   const rankings=await (await fetch(`${f.url}/api/ranking`)).json() as {points:number}[];
-  assert.deepEqual(rankings.map(r=>r.points).sort((a,b)=>b-a),count===3?[30,10,0]:[40,20,5,0]);
+  assert.deepEqual(rankings.map(r=>r.points).sort((a,b)=>b-a),count===2?[20,0]:count===3?[30,10,0]:[40,20,5,0]);
   const before=f.server.store.db.prepare('SELECT COUNT(*) AS n FROM participants').get()!.n;
   f.clock.time+=1000;f.server.tick();assert.equal(f.server.store.db.prepare('SELECT COUNT(*) AS n FROM participants').get()!.n,before);
   assert.ok(Number(f.server.store.db.prepare('SELECT COUNT(*) AS n FROM augment_choices').get()!.n)>=count);
@@ -112,5 +112,13 @@ test('completed-room broadcasts do not replace a new lobby; session rate limit r
   assert.equal((await request(clients[0],'leave')).ok,true);assert.equal((await request(clients[0],'create',{capacity:4})).ok,true);
   const newRoom=await snapshot(clients[0]);assert.equal(newRoom.capacity,4);assert.equal(newRoom.state,null);
   let rejected=false;for(let i=0;i<50;i++){const reply=await request(clients[0],'sync');if(!reply.ok){rejected=true;break;}}assert.equal(rejected,true);
+ }finally{await f.close();}
+});
+test('two-player room restores a reconnected seat and records a forfeit as 20/0 points',async()=>{
+ const f=await open();try{const {clients,users}=await setupRoom(f,2);await start(clients);await chooseInitial(clients);
+  clients[1].disconnect();await new Promise(r=>setTimeout(r,20));const restored=await f.connect(users[1].token);
+  const room=await snapshot(restored);assert.equal(room.capacity,2);assert.equal(room.me,1);assert.equal(room.state!.players.length,2);
+  assert.equal((await action(restored,'forfeit')).ok,true);assert.deepEqual((await snapshot(clients[0])).state!.ranks,[0,1]);
+  assert.equal(f.server.store.history(users[0].id)[0].points,20);assert.equal(f.server.store.history(users[1].id)[0].points,0);
  }finally{await f.close();}
 });

@@ -31,7 +31,7 @@ npm run deploy:quick
 - Cloudflare 소스는 공식 GitHub 태그를 복제하고 실제 커밋과 변경 없는 상태를 검사합니다. 저장소에 포함된 vendor 의존성으로 빌드합니다.
 - 설치 결과는 `.tools/cloudflared-monterey`와 빌드 해시 기록이며 Git에 올리지 않습니다. 공개 실행기는 실행 파일 해시를 확인합니다.
 - 필요한 도구는 macOS 기본 `curl`, `tar`와 Git입니다. Git 실행 시 개발자 도구 설치 창이 뜨면 설치 후 다시 실행하세요.
-- Linux에서 Intel Mac용 교차 빌드가 성공했고 Mach-O의 최소 macOS가 12.0임을 확인했습니다. 실제 Monterey에서의 실행·외부 연결은 아직 확인하지 못했습니다.
+- Linux에서 Intel Mac용 교차 빌드가 성공했고 Mach-O의 최소 macOS가 12.0임을 확인했습니다. 사용자가 제공한 실행 로그에서 Monterey 12.7.6의 cloudflared 2025.11.1 실행, 터널 등록 및 공개 웹/API/Socket.IO 초기 연결 성공을 확인했습니다. 새 게임 기능은 Mac에서 별도 확인이 필요합니다.
 - 이 클라우드에서는 별도의 DNS/TCP 제한 때문에 공개 주소 발급이 차단되어 있습니다. 이 스크립트는 사용자의 Mac에서 실행하기 위한 것이며 제한을 우회하지 않습니다.
 
 빌드나 실행이 실패하면 첫 오류 문구를 공유해 주세요. 인증서 검증을 끄거나 임의의 체크섬/OS 버전 패치를 적용하지 마세요.
@@ -39,3 +39,22 @@ npm run deploy:quick
 ### 설치 중 source commit mismatch가 나온 경우
 
 초기 설치 스크립트가 주석 태그 자체의 객체 ID를 소스 커밋으로 잘못 비교하던 오류를 수정했습니다. 2025.11.1의 태그 객체는 `690f20c008b4b6d2f12756618b9136ef6d5e2f18`, 실제 커밋은 `17533b124c225c9090ef1de5cd2ee201e8c398e8`입니다. 이제 둘을 각각 검증합니다. 저장소에서 `git pull --ff-only origin main` 후 `npm run tunnel:install:mac`을 다시 실행하세요. 정상적으로 받아둔 Go와 소스를 재사용하며 `.tools` 폴더를 지울 필요가 없습니다.
+
+## 터미널을 모두 닫은 뒤 다시 켜기
+
+1. Mac에서 `⌘ + Space`를 누르고 `터미널` 또는 `Terminal`을 검색해 엽니다.
+2. 저장소가 홈 폴더에 있다면 아래 명령을 실행합니다. 다른 위치에 받았다면 첫 줄의 경로를 바꿉니다.
+
+```sh
+cd ~/yutverse-online
+git pull --ff-only origin main
+npm ci
+npm run build
+npm run deploy:quick
+```
+
+이미 설치했던 `.tools` 디렉터리와 DB는 유지됩니다. 위 절차는 기존에 성공했던 Mac 터널 도구를 다시 사용합니다. 도구가 없다는 메시지가 나올 때만 `npm run tunnel:install:mac`을 한 번 실행한 뒤 재시도합니다.
+
+`PUBLIC GAME URL:` 뒤의 새 HTTPS 주소로 접속하고 친구들에게 다시 공유하세요. 예전에 공유한 임시 주소는 재시작 후 바뀔 수 있습니다. 터미널을 열어 두고 Mac이 잠들지 않게 해주세요. 서버와 터널을 끝내려면 Ctrl+C를 누릅니다.
+
+잠자기 방지를 함께 쓰고 싶으면 마지막 명령 대신 macOS 기본 명령인 `caffeinate -i npm run deploy:quick`을 사용할 수 있습니다. 이 옵션은 유휴 잠자기만 방지하며 노트북 덮개를 닫으면 잠들 수 있습니다.

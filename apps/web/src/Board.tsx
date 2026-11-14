@@ -1,8 +1,9 @@
 import {useEffect,useRef} from 'react';
 import {Canvas,useThree,useFrame} from '@react-three/fiber';
 import {OrbitControls,Line} from '@react-three/drei';
-import {OrthographicCamera,Vector3} from 'three';
+import {OrthographicCamera,Vector3,type Group,type MeshBasicMaterial} from 'three';
 import {legalMoves,position,HOME,DONE,type State} from '@yutverse/engine';
+import {homePosition,samplePose,type AnimationPlan} from './motion';
 
 const colors=['#ffbe32','#48dfb0','#69a9ff','#ff79c6'];
 const nodes=[...Array.from({length:20},(_,i)=>`o${i+1}`),'a1','a2','b1','b2','c','d1','d2','e1','e2'];
@@ -23,13 +24,10 @@ function FitCamera(){
  return null;
 }
 
-function homePosition(player:number,index:number):[number,number]{
- const along=-3.45+index*2.3;
- return player===0?[along,7.3]:player===1?[-7.3,along]:player===2?[along,-7.3]:[7.3,along];
-}
-
-function Token({x,z,color,label,selectable,stack,onClick}:{x:number;z:number;color:string;label:string;selectable:boolean;stack:number;onClick:()=>void}){
- return <group position={[x,.16,z]} scale={1.18} onClick={e=>{e.stopPropagation();if(selectable)onClick()}} onPointerOver={()=>{if(selectable)document.body.style.cursor='pointer'}} onPointerOut={()=>{document.body.style.cursor=''}}>
+function Token({x,z,color,selectable,onClick,player,index,animation}:{x:number;z:number;color:string;selectable:boolean;onClick:()=>void;player:number;index:number;animation:AnimationPlan|null}){
+ const group=useRef<Group>(null);
+ useFrame(()=>{if(!group.current)return;const pose=samplePose({x,z,player,index},animation,animation?performance.now()-animation.start:0);group.current.position.set(pose.x,pose.y,pose.z);group.current.rotation.set(0,pose.turn,pose.roll);group.current.scale.setScalar(1.18*pose.scale)});
+ return <group ref={group} position={[x,.16,z]} scale={1.18} onClick={e=>{e.stopPropagation();if(selectable)onClick()}} onPointerOver={()=>{if(selectable)document.body.style.cursor='pointer'}} onPointerOut={()=>{document.body.style.cursor=''}}>
   <mesh position={[0,-.055,0]}><cylinderGeometry args={[.68,.74,.12,24]}/><meshStandardMaterial color="#102c36"/></mesh>
   <mesh><cylinderGeometry args={[.6,.64,.17,24]}/><meshStandardMaterial color={color} roughness={.45}/></mesh>
   <mesh rotation={[-Math.PI/2,0,0]} position={[0,.1,0]}><ringGeometry args={[.49,.57,32]}/><meshBasicMaterial color="white"/></mesh>
@@ -43,21 +41,30 @@ function Token({x,z,color,label,selectable,stack,onClick}:{x:number;z:number;col
  </group>;
 }
 
-type VisibleToken={key:string;index:number;x:number;z:number;color:string;label:string;selectable:boolean;stack:number};
-function ProjectLabels({tokens,elements}:{tokens:VisibleToken[];elements:Map<string,HTMLDivElement>}){
+type VisibleToken={key:string;player:number;index:number;x:number;z:number;color:string;label:string;selectable:boolean;stack:number};
+function ProjectLabels({tokens,elements,animation}:{tokens:VisibleToken[];elements:Map<string,HTMLDivElement>;animation:AnimationPlan|null}){
  const point=useRef(new Vector3());
  useFrame(({camera,size})=>{
   for(const token of tokens){
    const element=elements.get(token.key);if(!element)continue;
-   point.current.set(token.x,2.65,token.z).project(camera);
+   const pose=samplePose(token,animation,animation?performance.now()-animation.start:0);
+   point.current.set(pose.x,pose.y-.16+2.65*pose.scale,pose.z).project(camera);element.dataset.motion=pose.kind;
    const x=(point.current.x+1)*size.width/2,y=(1-point.current.y)*size.height/2;
    element.style.transform=`translate3d(${x}px,${y}px,0) translate(-50%,-50%)`;
-   element.style.visibility=point.current.z<-1||point.current.z>1?'hidden':'visible';
+   element.style.visibility=pose.scale<.05||point.current.z<-1||point.current.z>1?'hidden':'visible';
   }
  });return null;
 }
 
-export function Board({s,onMove,low,me}:{s:State;onMove:(i:number)=>void;low:boolean;me:number}){
+function CaptureBurst({animation}:{animation:AnimationPlan}){
+ const group=useRef<Group>(null),material=useRef<MeshBasicMaterial>(null);
+ const [x,z]=position(animation.event.captures[0].from);
+ useFrame(()=>{const t=(performance.now()-animation.start-animation.travelMs)/animation.captureMs;if(group.current){group.current.visible=t>=0&&t<=1;group.current.scale.setScalar(1+Math.max(0,t)*2.5);}if(material.current)material.current.opacity=Math.max(0,1-t)*.8});
+ return <group ref={group} position={[x,.24,z]} visible={false}><mesh rotation={[-Math.PI/2,0,0]}><ringGeometry args={[.5,.7,36]}/><meshBasicMaterial ref={material} color="#ffb14e" transparent opacity={0} toneMapped={false}/></mesh></group>;
+}
+
+export function Board({s:live,onMove,low,me,animation=null}:{s:State;onMove:(i:number)=>void;low:boolean;me:number;animation?:AnimationPlan|null}){
+ const s=animation?.before||live;
  const legal=legalMoves(s),elements=useRef(new Map<string,HTMLDivElement>()).current;
  const tokens:VisibleToken[]=s.players.flatMap((p,j)=>{
   if(s.forfeited.includes(j))return [];
@@ -68,10 +75,10 @@ export function Board({s,onMove,low,me}:{s:State;onMove:(i:number)=>void;low:boo
    let [x,z]=atHome?homePosition(j,i):position(piece.node);
    const shared=!atHome&&s.players.some((other,k)=>k!==j&&!s.forfeited.includes(k)&&other.pieces.some(q=>q.node===piece.node));
    if(shared){x+=(j%2===0?-.5:.5);z+=(j<2?-.3:.3);}
-   return [{key:`${j}-${i}`,index:i,x,z,color:colors[j],label:`${j===me?'나':p.name.replace(/^AI /,'AI')} · ${i+1}`,selectable:j===me&&s.turn===me&&legal.includes(i),stack:atHome?1:p.pieces.filter(q=>q.node===piece.node).length}];
+   return [{key:`${j}-${i}`,player:j,index:i,x,z,color:colors[j],label:`${j===me?'나':p.name.replace(/^AI /,'AI')} · ${i+1}`,selectable:!animation&&j===me&&s.turn===me&&legal.includes(i),stack:atHome?1:p.pieces.filter(q=>q.node===piece.node).length}];
   });
  });
- return <div className="board-render"><Canvas orthographic shadows={!low} camera={{position:[0,22,16],zoom:32,near:.1,far:150}} dpr={low?1:[1,1.5]}>
+ return <div className="board-render" data-animating={Boolean(animation)}><Canvas orthographic shadows={!low} camera={{position:[0,22,16],zoom:32,near:.1,far:150}} dpr={low?1:[1,1.5]}>
   <FitCamera/>
   <color attach="background" args={['#123b3e']}/>
   <ambientLight intensity={1.9}/><directionalLight position={[6,14,10]} intensity={2.3} castShadow={!low} shadow-mapSize={[1024,1024]}/><directionalLight position={[-8,6,-6]} intensity={1.2}/>
@@ -80,8 +87,8 @@ export function Board({s,onMove,low,me}:{s:State;onMove:(i:number)=>void;low:boo
   <mesh rotation={[-Math.PI/2,0,0]} position={[0,.005,0]}><ringGeometry args={[5.6,5.64,4]}/><meshBasicMaterial color="#799e82" transparent opacity={.25}/></mesh>
   {[["o20","o5","o10","o15","o20"],["o5","c","o15"],["o10","c","o20"]].map((path,i)=><Line key={i} points={path.map(n=>{const [x,z]=position(n);return [x,.04,z]})} color="#dbebc6" lineWidth={3}/>)}
   {nodes.map(n=>{const [x,z]=position(n);const corner=n==='c'||['o5','o10','o15','o20'].includes(n);return <group key={n} position={[x,.06,z]}><mesh rotation={[-Math.PI/2,0,0]}><circleGeometry args={[corner?.48:.3,28]}/><meshStandardMaterial color="#edf2d3"/></mesh>{corner&&<mesh rotation={[-Math.PI/2,0,0]} position={[0,.01,0]}><ringGeometry args={[.32,.37,28]}/><meshBasicMaterial color="#426b59"/></mesh>}</group>})}
-  {tokens.map(({key,...token})=><Token key={key} {...token} onClick={()=>onMove(token.index)}/>)}
-  <ProjectLabels tokens={tokens} elements={elements}/>
+  {tokens.map(({key,...token})=><Token key={key} {...token} animation={animation} onClick={()=>onMove(token.index)}/>)}
+  <ProjectLabels tokens={tokens} elements={elements} animation={animation}/>{animation&&animation.event.captures.length>0&&<CaptureBurst animation={animation}/>}
   <OrbitControls makeDefault enablePan={false} minZoom={10} maxZoom={90} minPolarAngle={.1} maxPolarAngle={Math.PI/2.8} target={[0,0,0]}/>
  </Canvas><div className="token-overlay" aria-hidden="true">{tokens.map(token=><div key={token.key} ref={el=>{if(el)elements.set(token.key,el);else elements.delete(token.key)}} className={`token-label ${token.selectable?'selectable':''}`} style={{borderColor:token.color}}><i style={{background:token.color}}/><span className="label-name">{token.label}</span>{token.stack>1&&<strong className="stack-count">×{token.stack}</strong>}{token.selectable&&<em>선택</em>}</div>)}</div></div>;
 }

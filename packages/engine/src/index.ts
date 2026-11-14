@@ -3,9 +3,12 @@ export * from './augments.ts';
 export type Result = { name: string; steps: number; extra: boolean; bonus?:number };
 export type Piece = { node: string; history: string[] };
 export type Player = { name: string; pieces: Piece[]; slots:Slot[]; baseTurns:number };
-export type State = { players: Player[]; turn: number; phase: 'throw'|'move'|'augment'|'over'; result: Result|null; throws: number; ranks: number[]; log: string[]; turns: number; version:2; augmented:boolean; forfeited:number[]; selection:{player:number;offers:AugmentId[];deadline:number;queue:number[]}|null; choices:{player:number;id:AugmentId;turn:number;at:number}[] };
+export type PlayerCount = 2|3|4;
+export type MoveEvent = {id:number;player:number;indices:number[];path:string[];captures:{player:number;indices:number[];from:string;to:string}[]};
+export type State = { players: Player[]; turn: number; phase: 'throw'|'move'|'augment'|'over'; result: Result|null; throws: number; ranks: number[]; log: string[]; turns: number; version:2; augmented:boolean; forfeited:number[]; selection:{player:number;offers:AugmentId[];deadline:number;queue:number[]}|null; choices:{player:number;id:AugmentId;turn:number;at:number}[]; lastMove?:MoveEvent };
 export const HOME = 'home', DONE = 'done';
-export function createGame(count: 3|4 = 3, augmented=false, random:()=>number=Math.random, now=Date.now()): State {
+export function createGame(count: PlayerCount = 3, augmented=false, random:()=>number=Math.random, now=Date.now()): State {
+ if(![2,3,4].includes(count))throw Error('Player count must be 2, 3 or 4.');
  const state:State={version:2,augmented,forfeited:[],selection:null,choices:[],players:Array.from({length:count},(_,i)=>({name:i===0?'나':`AI ${i}`,slots:[],baseTurns:i===0?1:0,pieces:Array.from({length:4},()=>({node:HOME,history:[]}))})),turn:0,phase:'throw',result:null,throws:1,ranks:[],log:['새 경기가 시작되었습니다.'],turns:1};
  return augmented?offer(state,Array.from({length:count},(_,i)=>i),random,now):state;
 }
@@ -138,12 +141,15 @@ export function move(state:State,index:number,random:()=>number=Math.random,now=
  if(!legalMoves(state).includes(index))return state;
  const s=clone(state), player=s.players[s.turn], original=player.pieces[index], target=moveDestination(s,index)!;
  const group=player.pieces.map((p,i)=>({p,i})).filter(({p,i})=>i===index||(original.node!==HOME&&p.node===original.node));
+ const path=s.result!.steps<0?[original.node,target.node]:[original.node,...target.history.slice(original.history.length+1),target.node];
+ s.lastMove={id:(state.lastMove?.id||0)+1,player:s.turn,indices:group.map(({i})=>i),path,captures:[]};
  for(const {i} of group)player.pieces[i]=structuredClone(target);
  let captured=false;
  if(target.node!==HOME&&target.node!==DONE)s.players.forEach((op,i)=>{
   if(i===s.turn||eliminated(s,i)||!op.pieces.some(p=>p.node===target.node))return;
   if(trigger(s,i,'shield')||trigger(s,i,'hero-guard')){s.log.unshift(`${op.name}: 방패 발동`);return;}
   const respawn=trigger(s,i,'hero-phoenix')?'o5':trigger(s,i,'return')?'o1':HOME;
+  s.lastMove!.captures.push({player:i,indices:op.pieces.flatMap((p,j)=>p.node===target.node?[j]:[]),from:target.node,to:respawn});
   op.pieces=op.pieces.map(p=>p.node===target.node?{node:respawn,history:respawn===HOME?[]:[HOME]}:p);captured=true;
  });
  if(captured){s.throws++;if(s.throws<4&&trigger(s,s.turn,'hunter',true))s.throws++;s.log.unshift('잡기! 한 번 더 던집니다.');}

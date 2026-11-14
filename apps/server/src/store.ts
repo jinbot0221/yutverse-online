@@ -20,7 +20,7 @@ export class Store {
    if(room.state){for(const c of room.state.choices)this.db.prepare('INSERT OR IGNORE INTO augment_choices VALUES(?,?,?,?,?)').run(room.matchId,room.members[c.player].id,c.id,c.turn,c.at);}
    if(room.state?.phase==='over'){
     const saved=this.db.prepare('INSERT OR IGNORE INTO matches VALUES(?,?,?)').run(room.matchId,new Date().toISOString(),JSON.stringify(room.state));
-    if(saved.changes){room.state.ranks.forEach((player,index)=>{const points=room.members.length===3?[30,10,0][index]:[40,20,5,0][index];this.db.prepare('INSERT INTO participants VALUES(?,?,?,?,?)').run(room.matchId,room.members[player].id,index+1,points,room.state!.forfeited.includes(player)?1:0);});}
+    if(saved.changes){room.state.ranks.forEach((player,index)=>{const points=room.members.length===2?[20,0][index]:room.members.length===3?[30,10,0][index]:[40,20,5,0][index];this.db.prepare('INSERT INTO participants VALUES(?,?,?,?,?)').run(room.matchId,room.members[player].id,index+1,points,room.state!.forfeited.includes(player)?1:0);});}
    }
    this.db.exec('COMMIT');
   }catch(error){this.db.exec('ROLLBACK');throw error;}
