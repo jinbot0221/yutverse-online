@@ -37,9 +37,9 @@ npm run deploy:quick
 1. Node 버전·웹 빌드·Cloudflare 실행 파일 해시를 검사합니다.
 2. 비어 있는 루프백 포트 3003에 프로덕션 서버를 시작합니다. 이미 포트가 사용 중이면 기존 프로세스를 종료하지 않고 실패합니다.
 3. `/api/health` 준비 완료를 확인하고 Quick Tunnel을 요청합니다.
-4. 터널 연결 등록 후 생성 주소의 HTTPS 웹·API·Socket.IO 핸드셰이크를 확인합니다.
+4. 터널 연결 등록 후 최대 120초 동안 DNS/임시 게이트웨이 오류를 재시도하면서 생성 주소의 HTTPS 웹·API·Socket.IO 핸드셰이크를 확인합니다.
 5. 검증이 성공했을 때만 `PUBLIC GAME URL: https://…trycloudflare.com`을 출력합니다. URL은 전적 DB 디렉터리의 `public-url.txt`에도 기록합니다.
-6. 터널 실패·60초 연결 시간 초과·Ctrl+C 시 자신이 시작한 프로세스를 종료합니다.
+6. 터널 실패·60초 연결 등록 시간 초과·120초 공개 검증 시간 초과·Ctrl+C 시 자신이 시작한 프로세스를 종료합니다.
 
 기본 공개용 DB는 `data/public/yutverse.sqlite`로 개발용 DB와 분리됩니다. 경로는 `YUTVERSE_PUBLIC_DATA_DIR`, 포트는 `YUTVERSE_PUBLIC_PORT`로 변경할 수 있습니다. 기존 데이터를 삭제하거나 덮어쓰지 않습니다.
 

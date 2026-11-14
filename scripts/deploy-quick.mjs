@@ -1,5 +1,6 @@
 import {CLOUDFLARED_SOURCE} from './cloudflared-source.mjs';
-import {spawn,execFileSync} from 'node:child_process';
+import {waitForPublicGame} from './public-readiness.mjs';
+import {spawn} from 'node:child_process';
 import {existsSync,readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {resolve,dirname} from 'node:path';
@@ -13,28 +14,28 @@ const port=Number(process.env.YUTVERSE_PUBLIC_PORT||3003);
 const dataDir=resolve(process.env.YUTVERSE_PUBLIC_DATA_DIR||resolve(root,'data/public'));
 const origin=`http://127.0.0.1:${port}`;
 let app,tunnel,stopping=false,timeout,publicUrl,checking=false;
+const validation=new AbortController();
 function stop(code=0){
- if(stopping)return;stopping=true;clearTimeout(timeout);
+ if(stopping)return;stopping=true;clearTimeout(timeout);validation.abort();
  tunnel?.kill('SIGTERM');app?.kill('SIGTERM');
  // Give the app time to close SQLite, then reap only children started here.
  const force=setTimeout(()=>{tunnel?.kill('SIGKILL');app?.kill('SIGKILL');process.exit(code)},5000);force.unref();
  Promise.all([app,tunnel].filter(Boolean).map(child=>child.exitCode!==null?Promise.resolve():new Promise(r=>child.once('exit',r)))).then(()=>{clearTimeout(force);process.exit(code)});
 }
 function fail(message){console.error(message);stop(1);}
-for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>stop(0));
+for(const signal of ['SIGINT','SIGTERM','SIGHUP'])process.on(signal,()=>stop(0));
 async function externalCheck(){
  if(checking||!publicUrl)return;checking=true;
  try{
-  const run=path=>execFileSync('curl',['--fail','--silent','--show-error','--max-time','15',publicUrl+path],{encoding:'utf8'});
-  const health=JSON.parse(run('/api/health'));
-  if(health.ok!==true||!run('/').includes('<div id="root"></div>'))throw Error('Public web/API validation failed');
-  const transport=run('/socket.io/?EIO=4&transport=polling');
-  if(!transport.startsWith('0')||!transport.includes('"sid"'))throw Error('Public Socket.IO handshake failed');
+  clearTimeout(timeout);
+  console.log('Tunnel connected. Waiting up to 120 seconds for DNS and the public game to become reachable.');
+  await waitForPublicGame(publicUrl,{signal:validation.signal,onRetry:({attempt,waitMs,reason})=>console.log(`Public address preparation ${attempt}: ${reason}. Retrying in ${waitMs/1000}s; keep this terminal open.`)});
+  if(stopping)return;
   mkdirSync(dataDir,{recursive:true});writeFileSync(resolve(dataDir,'public-url.txt'),publicUrl+'\n');
   clearTimeout(timeout);
   console.log(`PUBLIC GAME URL: ${publicUrl}`);
   console.log('HTTPS web, API and Socket.IO handshake verified. This temporary URL needs this process and cloud environment to stay running.');
- }catch(error){fail(`Tunnel registered but external validation failed: ${error.message}`);}
+ }catch(error){if(!stopping)fail(`Tunnel registered but external validation failed: ${error.message}`);}
 }
 try{
  if(Number(process.versions.node.split('.')[0])<24)throw Error('Node 24+ is required.');

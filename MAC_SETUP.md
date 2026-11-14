@@ -58,3 +58,16 @@ npm run deploy:quick
 `PUBLIC GAME URL:` 뒤의 새 HTTPS 주소로 접속하고 친구들에게 다시 공유하세요. 예전에 공유한 임시 주소는 재시작 후 바뀔 수 있습니다. 터미널을 열어 두고 Mac이 잠들지 않게 해주세요. 서버와 터널을 끝내려면 Ctrl+C를 누릅니다.
 
 잠자기 방지를 함께 쓰고 싶으면 마지막 명령 대신 macOS 기본 명령인 `caffeinate -i npm run deploy:quick`을 사용할 수 있습니다. 이 옵션은 유휴 잠자기만 방지하며 노트북 덮개를 닫으면 잠들 수 있습니다.
+
+## 터널 등록 직후 Could not resolve host가 나온 경우
+
+Quick Tunnel 호스트가 할당되어도 사용자 컴퓨터의 DNS에서 새 주소가 바로 조회되지 않을 수 있습니다. 초기 실행기는 첫 검증 실패만으로 서버와 터널을 종료했지만, 수정본은 터널 등록 후 최대 120초 동안 DNS·임시 연결/게이트웨이 오류를 재시도합니다. 웹, API, Socket.IO 검증이 모두 끝나야 `PUBLIC GAME URL:`을 출력합니다. 권한·TLS 검증 실패를 무시하지 않으며 제한 시간 내 준비되지 않으면 종료합니다.
+
+이전 실행이 이미 종료됐다면 저장소에서 아래 두 명령으로 수정본을 받아 다시 실행합니다. 이 수정에는 웹 재빌드나 터널 도구 재설치가 필요하지 않습니다.
+
+```sh
+git pull --ff-only origin main
+npm run deploy:quick
+```
+
+`[public hostname pending validation]`이나 검증 실패 로그에 나오는 주소는 공유하지 마세요. 실행 중인 프로세스에서 검증을 마치고 `PUBLIC GAME URL:`로 출력한 주소를 공유합니다. 2분이 지나도 DNS 오류가 계속되면 새 로그를 확인해야 합니다.
