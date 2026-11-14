@@ -90,7 +90,7 @@ test('turn timeout excludes a stalled player and selection does not consume the 
 });
 test('SQLite restores live match, sessions and augment choices across a server restart; history remains after completion',async()=>{
  const dir=mkdtempSync(join(tmpdir(),'yutverse-')),db=join(dir,'game.sqlite'),clock={time:1000000};let f=await open(db,clock);
- try{const {clients,users}=await setupRoom(f,3);await start(clients);await chooseInitial(clients);const before=(await snapshot(clients[0])).state;
+ try{const {clients,users}=await setupRoom(f,3);assert.equal((await request(clients[0],'character',{character:'mage'})).ok,true);await start(clients);await chooseInitial(clients);const before=(await snapshot(clients[0])).state;assert.equal(before!.players[0].character,'mage');
   await f.close();f=await open(db,clock);const restored=[];for(const user of users)restored.push(await f.connect(user.token));
   assert.deepEqual((await snapshot(restored[0])).state,before);
   assert.equal((await action(restored[1],'forfeit')).ok,true);assert.equal((await action(restored[2],'forfeit')).ok,true);
@@ -129,4 +129,16 @@ test('server requires a legal fork choice and ignores forged routes',async()=>{
   assert.equal((await action(clients[0],'move',{index:0})).ok,false);assert.equal((await action(clients[0],'move',{index:0,route:'not-a-route'})).ok,false);
   assert.equal((await action(clients[0],'move',{index:0,route:'outer'})).ok,true);assert.equal((await snapshot(clients[0])).state!.players[0].pieces[0].node,'o7');
  }finally{await f.close();}
+});
+test('hero choices synchronize, reset readiness and are locked once a match starts',async()=>{
+ const f=await open();try{const {clients,users}=await setupRoom(f,2);
+  assert.equal((await request(clients[0],'ready')).ok,true);
+  assert.equal((await request(clients[0],'character',{character:'unknown'})).ok,false);
+  assert.equal((await snapshot(clients[1])).members[0].ready,true);
+  assert.equal((await request(clients[0],'character',{character:'dwarf',userId:users[1].id})).ok,true);
+  let view=await snapshot(clients[1]);assert.equal(view.members[0].character,'dwarf');assert.equal(view.members[0].ready,false);assert.equal(view.members[1].character,'knight');
+  assert.equal((await request(clients[1],'character',{character:'archer'})).ok,true);await start(clients);
+  view=await snapshot(clients[0]);assert.deepEqual(view.state!.players.map(p=>p.character),['dwarf','archer']);
+  assert.equal((await request(clients[0],'character',{character:'mage'})).ok,false);assert.deepEqual((await snapshot(clients[1])).state!.players.map(p=>p.character),['dwarf','archer']);
+ }finally{await f.close()}
 });

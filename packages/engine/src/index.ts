@@ -1,16 +1,19 @@
 import {available,candidates,definition,eligible,type Slot,type AugmentId} from './augments.ts';
+import {CHARACTERS,DEFAULT_CHARACTER,type CharacterId} from './characters.ts';
+export * from './characters.ts';
 export * from './augments.ts';
 export type Result = { name: string; steps: number; extra: boolean; bonus?:number; id?:number; sticks?:boolean[]; extraSettled?:boolean };
 export type Piece = { node: string; history: string[] };
-export type Player = { name: string; pieces: Piece[]; slots:Slot[]; baseTurns:number };
+export type Player = { name: string; pieces: Piece[]; slots:Slot[]; baseTurns:number; character?:CharacterId };
 export type Route='outer'|'diagonal'|'homeward'|'far';
 export type PlayerCount = 2|3|4;
 export type MoveEvent = {id:number;player:number;indices:number[];path:string[];captures:{player:number;indices:number[];from:string;to:string}[]};
 export type State = { players: Player[]; turn: number; phase: 'throw'|'move'|'augment'|'over'; result: Result|null; throws: number; ranks: number[]; log: string[]; turns: number; version:2; augmented:boolean; forfeited:number[]; selection:{player:number;offers:AugmentId[];deadline:number;queue:number[]}|null; choices:{player:number;id:AugmentId;turn:number;at:number}[]; lastMove?:MoveEvent; pendingResults?:Result[]; lastThrow?:{id:number;player:number;result:Result} };
 export const HOME = 'home', DONE = 'done';
-export function createGame(count: PlayerCount = 3, augmented=false, random:()=>number=Math.random, now=Date.now()): State {
+export function createGame(count: PlayerCount = 3, augmented=false, random:()=>number=Math.random, now=Date.now(),characters:CharacterId[]=[]): State {
  if(![2,3,4].includes(count))throw Error('Player count must be 2, 3 or 4.');
  const state:State={version:2,augmented,forfeited:[],pendingResults:[],selection:null,choices:[],players:Array.from({length:count},(_,i)=>({name:i===0?'나':`AI ${i}`,slots:[],baseTurns:i===0?1:0,pieces:Array.from({length:4},()=>({node:HOME,history:[]}))})),turn:0,phase:'throw',result:null,throws:1,ranks:[],log:['새 경기가 시작되었습니다.'],turns:1};
+ state.players.forEach((p,i)=>p.character=characters[i]??(i===0?DEFAULT_CHARACTER:CHARACTERS[(i-1)%CHARACTERS.length].id));
  return augmented?offer(state,Array.from({length:count},(_,i)=>i),random,now):state;
 }
 // Four independent fair sticks. One of the four sticks has the back-do mark.

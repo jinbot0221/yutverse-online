@@ -3,9 +3,9 @@ import {createServer} from 'node:http';
 import {Server} from 'socket.io';
 import {randomInt,randomUUID} from 'node:crypto';
 import {resolve} from 'node:path';
-import {createGame,throwYut,move,legalRoutes,selectResult,selectAugment,useAugment,skipMove,expireSelection,forfeit,type State} from '@yutverse/engine';
+import {createGame,throwYut,move,legalRoutes,selectResult,selectAugment,useAugment,skipMove,expireSelection,forfeit,DEFAULT_CHARACTER,isCharacterId,type CharacterId,type State} from '@yutverse/engine';
 import {Store} from './store.ts';
-export type Member={id:string;name:string;ready:boolean;connected:boolean;disconnectedAt:number|null;departed?:boolean};
+export type Member={id:string;name:string;ready:boolean;connected:boolean;disconnectedAt:number|null;departed?:boolean;character?:CharacterId};
 export type Room={code:string;matchId:string;capacity:2|3|4;owner:string;members:Member[];state:State|null;revision:number;actionDeadline:number|null;createdAt:number};
 type Options={dbPath:string;random?:()=>number;now?:()=>number;graceMs?:number;turnMs?:number;staticDir?:string;webOrigin?:string};
 export function createGameServer(options:Options){
@@ -65,19 +65,22 @@ export function createGameServer(options:Options){
   }catch(error){reply({ok:false,error:error instanceof Error?error.message:'요청에 실패했습니다.'});}});}
   function roomFor(){const r=[...rooms.values()].find(r=>r.members.some(m=>m.id===user.id&&!m.departed)&&r.state?.phase!=='over')||[...rooms.values()].find(r=>r.members.some(m=>m.id===user.id&&!m.departed));if(!r)throw Error('참가 중인 방이 없습니다.');return r;}
   handle('create',data=>{
+   if(data.character!==undefined&&!isCharacterId(data.character))throw Error('선택할 수 없는 캐릭터입니다.');
    if(findRoom(user.id))throw Error('이미 참가 중인 방이 있습니다.');for(const old of rooms.values())if(old.state?.phase==='over'){const member=old.members.find(m=>m.id===user.id);if(member)member.departed=true;}if(data.capacity!==2&&data.capacity!==3&&data.capacity!==4)throw Error('2~4인 방만 지원합니다.');
    if(rooms.size>=200)throw Error('방이 가득 찼습니다.');
    let code='';do{code=Array.from({length:6},()=> 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[randomInt(32)]).join('');}while(rooms.has(code));
-   const room:Room={code,matchId:randomUUID(),capacity:data.capacity,owner:user.id,members:[{...user,ready:false,connected:true,disconnectedAt:null}],state:null,revision:0,actionDeadline:null,createdAt:now()};rooms.set(code,room);publish(room);return {room:publicRoom(room,user.id)};
+   const room:Room={code,matchId:randomUUID(),capacity:data.capacity,owner:user.id,members:[{...user,character:isCharacterId(data.character)?data.character:DEFAULT_CHARACTER,ready:false,connected:true,disconnectedAt:null}],state:null,revision:0,actionDeadline:null,createdAt:now()};rooms.set(code,room);publish(room);return {room:publicRoom(room,user.id)};
   });
   handle('join',data=>{
+   if(data.character!==undefined&&!isCharacterId(data.character))throw Error('선택할 수 없는 캐릭터입니다.');
    if(typeof data.code!=='string'||!/^[A-Z2-9]{6}$/.test(data.code))throw Error('초대 코드를 확인하세요.');
    if(findRoom(user.id))throw Error('이미 참가 중인 방이 있습니다.');for(const old of rooms.values())if(old.state?.phase==='over'){const member=old.members.find(m=>m.id===user.id);if(member)member.departed=true;}const room=rooms.get(data.code);if(!room||room.state||room.members.length>=room.capacity)throw Error('참가할 수 없는 방입니다.');
-   room.members.push({...user,ready:false,connected:true,disconnectedAt:null});publish(room);return {room:publicRoom(room,user.id)};
+   room.members.push({...user,character:isCharacterId(data.character)?data.character:DEFAULT_CHARACTER,ready:false,connected:true,disconnectedAt:null});publish(room);return {room:publicRoom(room,user.id)};
   });
   handle('sync',()=>{const room=roomFor();return {room:publicRoom(room,user.id)};});
+  handle('character',data=>{const room=roomFor();if(room.state)throw Error('경기 중에는 캐릭터를 바꿀 수 없습니다.');if(!isCharacterId(data.character))throw Error('선택할 수 없는 캐릭터입니다.');const member=room.members.find(m=>m.id===user.id)!;member.character=data.character;member.ready=false;publish(room);return {room:publicRoom(room,user.id)};});
   handle('ready',()=>{const room=roomFor();if(room.state)throw Error('이미 시작된 경기입니다.');const m=room.members.find(m=>m.id===user.id)!;m.ready=!m.ready;publish(room);});
-  handle('start',()=>{const room=roomFor();if(room.owner!==user.id||room.state||room.members.length!==room.capacity||room.members.some(m=>!m.ready||!m.connected))throw Error('방장만 모두 준비된 경기를 시작할 수 있습니다.');const s=createGame(room.capacity,true,random,now());s.players.forEach((p,i)=>p.name=room.members[i].name);apply(room,s);});
+  handle('start',()=>{const room=roomFor();if(room.owner!==user.id||room.state||room.members.length!==room.capacity||room.members.some(m=>!m.ready||!m.connected))throw Error('방장만 모두 준비된 경기를 시작할 수 있습니다.');const s=createGame(room.capacity,true,random,now(),room.members.map(m=>m.character??DEFAULT_CHARACTER));s.players.forEach((p,i)=>p.name=room.members[i].name);apply(room,s);});
   handle('act',data=>{
    const room=roomFor(),state=room.state,index=room.members.findIndex(m=>m.id===user.id);if(!state||state.phase==='over')throw Error('진행 중인 경기가 없습니다.');
    if(data.revision!==room.revision)throw Error('상태가 갱신되었습니다. 다시 시도하세요.');
