@@ -16,7 +16,7 @@ test('animation follows shortcut waypoints and capture starts only after landing
 test('mount/reconnect and skipped event revisions do not replay stale animations',()=>{
  const s=ready(1),after=move(s,0);assert.equal(createAnimation(after,after,0),null);assert.equal(createAnimation(undefined,after,0),null);
  const jumped=structuredClone(after);jumped.lastMove!.id=5;assert.equal(createAnimation(s,jumped,0),null);
- const picking=structuredClone(after);picking.phase='augment';assert.equal(createAnimation(s,picking,0),null);
+ const picking=structuredClone(after);picking.phase='augment';assert.ok(createAnimation(s,picking,0),'finish movement before showing the next choice screen');
 });
 test('reduced-motion capture retains positions and timing without bouncing or spinning',()=>{
  const before=ready(1);before.players[1].pieces[0]={node:'o1',history:[]};const plan=createAnimation(before,move(before,0),0,true)!;

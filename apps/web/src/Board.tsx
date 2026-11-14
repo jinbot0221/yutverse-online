@@ -3,10 +3,23 @@ import {Canvas,useThree,useFrame} from '@react-three/fiber';
 import {OrbitControls,Line} from '@react-three/drei';
 import {OrthographicCamera,Vector3,type Group,type MeshBasicMaterial} from 'three';
 import {legalMoves,position,HOME,DONE,type State} from '@yutverse/engine';
+import {ThrowSticks} from './ThrowSticks';
+import type {ThrowAnimation} from './throw-motion';
 import {homePosition,samplePose,type AnimationPlan} from './motion';
 
 const colors=['#ffbe32','#48dfb0','#69a9ff','#ff79c6'];
 const nodes=[...Array.from({length:20},(_,i)=>`o${i+1}`),'a1','a2','b1','b2','c','d1','d2','e1','e2'];
+
+function PlaybackClock<T extends AnimationPlan|ThrowAnimation>({plan,onEnd}:{plan:T|null;onEnd:(plan:T)=>void}){
+ const previous=useRef<AnimationPlan|ThrowAnimation|null>(null),warmFrames=useRef(0);
+ useFrame(()=>{
+  if(!plan)return;
+  if(previous.current!==plan){previous.current=plan;warmFrames.current=0;}
+  if(!Number.isFinite(plan.start)){if(warmFrames.current++===0)return;plan.start=performance.now();}
+  if(performance.now()-plan.start>=plan.duration)onEnd(plan);
+ },-10);
+ return null;
+}
 
 function FitCamera(){
  const {camera,size}=useThree();
@@ -59,12 +72,12 @@ function ProjectLabels({tokens,elements,animation}:{tokens:VisibleToken[];elemen
 function CaptureBurst({animation}:{animation:AnimationPlan}){
  const group=useRef<Group>(null),material=useRef<MeshBasicMaterial>(null);
  const [x,z]=position(animation.event.captures[0].from);
- useFrame(()=>{const t=(performance.now()-animation.start-animation.travelMs)/animation.captureMs;if(group.current){group.current.visible=t>=0&&t<=1;group.current.scale.setScalar(1+Math.max(0,t)*2.5);}if(material.current)material.current.opacity=Math.max(0,1-t)*.8});
+ useFrame(()=>{const t=(performance.now()-animation.start-animation.travelMs)/animation.captureMs;if(group.current){group.current.visible=t>=0&&t<=1;group.current.scale.setScalar(1+Math.max(0,t)*2.5);}if(material.current)material.current.opacity=Math.max(0,Math.min(1,1-t))*.8});
  return <group ref={group} position={[x,.24,z]} visible={false}><mesh rotation={[-Math.PI/2,0,0]}><ringGeometry args={[.5,.7,36]}/><meshBasicMaterial ref={material} color="#ffb14e" transparent opacity={0} toneMapped={false}/></mesh></group>;
 }
 
-export function Board({s:live,onMove,low,me,animation=null}:{s:State;onMove:(i:number)=>void;low:boolean;me:number;animation?:AnimationPlan|null}){
- const s=animation?.before||live;
+export function Board({s:live,onMove,low,me,animation=null,throwAnimation=null,previews=[],onAnimationEnd=()=>{},onThrowEnd=()=>{}}:{s:State;onMove:(i:number)=>void;low:boolean;me:number;animation?:AnimationPlan|null;throwAnimation?:ThrowAnimation|null;previews?:{destination:string;id:string}[];onAnimationEnd?:(plan:AnimationPlan)=>void;onThrowEnd?:(plan:ThrowAnimation)=>void}){
+ const s=animation?.before||throwAnimation?.before||live;
  const legal=legalMoves(s),elements=useRef(new Map<string,HTMLDivElement>()).current;
  const tokens:VisibleToken[]=s.players.flatMap((p,j)=>{
   if(s.forfeited.includes(j))return [];
@@ -75,11 +88,11 @@ export function Board({s:live,onMove,low,me,animation=null}:{s:State;onMove:(i:n
    let [x,z]=atHome?homePosition(j,i):position(piece.node);
    const shared=!atHome&&s.players.some((other,k)=>k!==j&&!s.forfeited.includes(k)&&other.pieces.some(q=>q.node===piece.node));
    if(shared){x+=(j%2===0?-.5:.5);z+=(j<2?-.3:.3);}
-   return [{key:`${j}-${i}`,player:j,index:i,x,z,color:colors[j],label:`${j===me?'나':p.name.replace(/^AI /,'AI')} · ${i+1}`,selectable:!animation&&j===me&&s.turn===me&&legal.includes(i),stack:atHome?1:p.pieces.filter(q=>q.node===piece.node).length}];
+   return [{key:`${j}-${i}`,player:j,index:i,x,z,color:colors[j],label:`${j===me?'나':p.name.replace(/^AI /,'AI')} · ${i+1}`,selectable:!animation&&!throwAnimation&&j===me&&s.turn===me&&legal.includes(i),stack:atHome?1:p.pieces.filter(q=>q.node===piece.node).length}];
   });
  });
- return <div className="board-render" data-animating={Boolean(animation)}><Canvas orthographic shadows={!low} camera={{position:[0,22,16],zoom:32,near:.1,far:150}} dpr={low?1:[1,1.5]}>
-  <FitCamera/>
+ return <div className="board-render" data-animating={Boolean(animation)} data-throwing={Boolean(throwAnimation)}><Canvas orthographic shadows={!low} camera={{position:[0,22,16],zoom:32,near:.1,far:150}} dpr={low?1:[1,1.5]}>
+  <FitCamera/><PlaybackClock plan={animation} onEnd={onAnimationEnd}/><PlaybackClock plan={throwAnimation} onEnd={onThrowEnd}/>
   <color attach="background" args={['#123b3e']}/>
   <ambientLight intensity={1.9}/><directionalLight position={[6,14,10]} intensity={2.3} castShadow={!low} shadow-mapSize={[1024,1024]}/><directionalLight position={[-8,6,-6]} intensity={1.2}/>
   <mesh rotation={[-Math.PI/2,0,0]} position={[0,-.4,0]} receiveShadow><planeGeometry args={[200,200]}/><meshStandardMaterial color="#123b3e"/></mesh>
@@ -89,6 +102,8 @@ export function Board({s:live,onMove,low,me,animation=null}:{s:State;onMove:(i:n
   {nodes.map(n=>{const [x,z]=position(n);const corner=n==='c'||['o5','o10','o15','o20'].includes(n);return <group key={n} position={[x,.06,z]}><mesh rotation={[-Math.PI/2,0,0]}><circleGeometry args={[corner?.48:.3,28]}/><meshStandardMaterial color="#edf2d3"/></mesh>{corner&&<mesh rotation={[-Math.PI/2,0,0]} position={[0,.01,0]}><ringGeometry args={[.32,.37,28]}/><meshBasicMaterial color="#426b59"/></mesh>}</group>})}
   {tokens.map(({key,...token})=><Token key={key} {...token} animation={animation} onClick={()=>onMove(token.index)}/>)}
   <ProjectLabels tokens={tokens} elements={elements} animation={animation}/>{animation&&animation.event.captures.length>0&&<CaptureBurst animation={animation}/>}
+  {throwAnimation&&<ThrowSticks animation={throwAnimation}/>}
+  {previews.map((p,i)=>{const [x,z]=position(p.destination);return <mesh key={p.id} position={[x,.25,z]} rotation={[-Math.PI/2,0,0]}><ringGeometry args={[.6,.82,32]}/><meshBasicMaterial color={i===0?'#f5d270':'#66bfff'} toneMapped={false}/></mesh>})}
   <OrbitControls makeDefault enablePan={false} minZoom={10} maxZoom={90} minPolarAngle={.1} maxPolarAngle={Math.PI/2.8} target={[0,0,0]}/>
  </Canvas><div className="token-overlay" aria-hidden="true">{tokens.map(token=><div key={token.key} ref={el=>{if(el)elements.set(token.key,el);else elements.delete(token.key)}} className={`token-label ${token.selectable?'selectable':''}`} style={{borderColor:token.color}}><i style={{background:token.color}}/><span className="label-name">{token.label}</span>{token.stack>1&&<strong className="stack-count">×{token.stack}</strong>}{token.selectable&&<em>선택</em>}</div>)}</div></div>;
 }

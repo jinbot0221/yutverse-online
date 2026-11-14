@@ -6,7 +6,7 @@ export function homePosition(player:number,index:number):[number,number]{const a
 const clamp=(n:number)=>Math.max(0,Math.min(1,n));
 export function createAnimation(before:State|undefined,after:State|undefined,start:number,reduced=false):AnimationPlan|null{
  const event=after?.lastMove;
- if(!before||!after||after.phase==='augment'||!event||before.players.length!==after.players.length||event.id!==(before.lastMove?.id||0)+1)return null;
+ if(!before||!after||!event||before.players.length!==after.players.length||event.id!==(before.lastMove?.id||0)+1)return null;
  const travelMs=reduced?120:Math.max(1,event.path.length-1)*180;
  const captureMs=event.captures.length?(reduced?120:850):0;
  return {before,event,start,travelMs,captureMs,duration:travelMs+Math.max(captureMs,event.path.at(-1)===DONE?(reduced?120:450):120),reduced};

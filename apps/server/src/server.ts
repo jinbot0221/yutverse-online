@@ -3,7 +3,7 @@ import {createServer} from 'node:http';
 import {Server} from 'socket.io';
 import {randomInt,randomUUID} from 'node:crypto';
 import {resolve} from 'node:path';
-import {createGame,throwYut,move,selectAugment,useAugment,skipMove,expireSelection,forfeit,type State} from '@yutverse/engine';
+import {createGame,throwYut,move,legalRoutes,selectResult,selectAugment,useAugment,skipMove,expireSelection,forfeit,type State} from '@yutverse/engine';
 import {Store} from './store.ts';
 export type Member={id:string;name:string;ready:boolean;connected:boolean;disconnectedAt:number|null;departed?:boolean};
 export type Room={code:string;matchId:string;capacity:2|3|4;owner:string;members:Member[];state:State|null;revision:number;actionDeadline:number|null;createdAt:number};
@@ -86,7 +86,8 @@ export function createGameServer(options:Options){
    else if(data.kind==='choose'&&typeof data.id==='string')next=selectAugment(state,index,data.id,random,now());
    else if(index===state.turn){
     if(data.kind==='throw')next=throwYut(state,random,now());
-    if(data.kind==='move'&&Number.isInteger(data.index))next=move(state,data.index as number,random,now());
+    if(data.kind==='select-result'&&Number.isInteger(data.id))next=selectResult(state,data.id as number);
+    if(data.kind==='move'&&Number.isInteger(data.index)){const routes=legalRoutes(state,data.index as number);const route=routes.find(r=>r.id===data.route)?.id;if((!routes.length&&data.route===undefined)||(routes.length&&route))next=move(state,data.index as number,random,now(),route);}
     if(data.kind==='use'&&typeof data.id==='string')next=useAugment(state,index,data.id,random,now());
     if(data.kind==='skip')next=skipMove(state,random,now());
    }

@@ -4,7 +4,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {io,type Socket} from 'socket.io-client';
-import {chooseMove,legalMoves,type State} from '@yutverse/engine';
+import {chooseMove,chooseRoute,legalMoves,type State} from '@yutverse/engine';
 import {createGameServer,type Room} from './server.ts';
 type Reply={ok:boolean;error?:string;room?:Room&{me:number}};
 async function open(dbPath=':memory:',clock={time:1000000}){
@@ -55,7 +55,7 @@ for(const count of [2,3,4] as const)test(`${count}-player authoritative match fi
   const {clients}=await setupRoom(f,count);await start(clients);let actions=0;
   while(actions++<3000){pace(f);const r=await snapshot(clients[0]),s=r.state!;if(s.phase==='over')break;
    const actor=s.selection?.player??s.turn;const own=await snapshot(clients[actor]);const state=own.state!;
-   const reply=state.selection?await action(clients[actor],'choose',{id:state.selection.offers[0]}):state.phase==='throw'?await action(clients[actor],'throw'):legalMoves(state).length?await action(clients[actor],'move',{index:chooseMove(state,'hard')}):await action(clients[actor],'skip');
+   const reply=state.selection?await action(clients[actor],'choose',{id:state.selection.offers[0]}):state.phase==='throw'?await action(clients[actor],'throw'):legalMoves(state).length?await action(clients[actor],'move',{index:chooseMove(state,'hard'),route:chooseRoute(state,chooseMove(state,'hard'),'hard')}):await action(clients[actor],'skip');
    assert.equal(reply.ok,true,reply.error);
   }
   const last=await snapshot(clients[0]);assert.equal(last.state!.phase,'over');assert.equal(new Set(last.state!.ranks).size,count);
@@ -120,5 +120,13 @@ test('two-player room restores a reconnected seat and records a forfeit as 20/0 
   const room=await snapshot(restored);assert.equal(room.capacity,2);assert.equal(room.me,1);assert.equal(room.state!.players.length,2);
   assert.equal((await action(restored,'forfeit')).ok,true);assert.deepEqual((await snapshot(clients[0])).state!.ranks,[0,1]);
   assert.equal(f.server.store.history(users[0].id)[0].points,20);assert.equal(f.server.store.history(users[1].id)[0].points,0);
+ }finally{await f.close();}
+});
+test('server requires a legal fork choice and ignores forged routes',async()=>{
+ const f=await open();try{const {clients}=await setupRoom(f,2);await start(clients);await chooseInitial(clients);
+  // Arrange a server-owned checkpoint; actions still travel over real sockets.
+  const room=[...f.server.rooms.values()][0];room.state!.phase='move';room.state!.result={name:'개',steps:2,extra:false};room.state!.throws=0;room.state!.players[0].pieces[0]={node:'o5',history:[]};
+  assert.equal((await action(clients[0],'move',{index:0})).ok,false);assert.equal((await action(clients[0],'move',{index:0,route:'not-a-route'})).ok,false);
+  assert.equal((await action(clients[0],'move',{index:0,route:'outer'})).ok,true);assert.equal((await snapshot(clients[0])).state!.players[0].pieces[0].node,'o7');
  }finally{await f.close();}
 });
