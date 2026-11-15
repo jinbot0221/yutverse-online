@@ -142,3 +142,79 @@ test('hero choices synchronize, reset readiness and are locked once a match star
   assert.equal((await request(clients[0],'character',{character:'mage'})).ok,false);assert.deepEqual((await snapshot(clients[1])).state!.players.map(p=>p.character),['dwarf','archer']);
  }finally{await f.close()}
 });
+async function account(f:Awaited<ReturnType<typeof open>>,login:string,nickname=login,token?:string){const response=await fetch(f.url+'/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify({login,password:'a-test-password-24',nickname})});assert.equal(response.status,201);return await response.json() as {token:string;user:{id:string;name:string;login:string}};}
+async function signIn(f:Awaited<ReturnType<typeof open>>,login:string,password='a-test-password-24'){return fetch(f.url+'/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login,password})});}
+test('accounts validate input, hash salted passwords, accept case-insensitive IDs and revoke sessions on logout',async()=>{
+ const f=await open();try{
+  const a=await account(f,'Alice_01','달빛'),b=await account(f,'Bob_02');assert.equal(a.user.name,'달빛');
+  const rows=f.server.store.db.prepare('SELECT salt,password_hash FROM accounts').all();assert.notEqual(rows[0].salt,rows[1].salt);assert.notEqual(rows[0].password_hash,rows[1].password_hash);assert.ok(rows.every(r=>r.password_hash!=='a-test-password-24'));
+  assert.equal((await fetch(f.url+'/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login:'ALICE_01',password:'a-test-password-24',nickname:'중복'})})).status,409);
+  assert.equal((await fetch(f.url+'/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login:'ok_id',password:'short',nickname:'짧음'})})).status,400);
+  assert.equal((await signIn(f,'alice_01','wrong-password')).status,401);assert.equal((await signIn(f,'missing_user')).status,401);
+  const login=await (await signIn(f,'ALICE_01')).json() as typeof a;assert.equal(login.user.id,a.user.id);
+  const headers={Authorization:`Bearer ${login.token}`};assert.equal((await fetch(f.url+'/api/auth/me',{headers})).status,200);assert.equal((await fetch(f.url+'/api/account/records')).status,401);
+  const socket=await f.connect(login.token);assert.equal((await fetch(f.url+'/api/auth/logout',{method:'POST',headers})).status,200);assert.equal((await fetch(f.url+'/api/auth/me',{headers})).status,401);assert.equal((await fetch(f.url+'/api/auth/me',{headers:{Authorization:`Bearer ${b.token}`}})).status,200);
+  await new Promise(r=>setTimeout(r,20));assert.equal(socket.connected,false);
+ }finally{await f.close()}
+});
+test('exit during augmentation forfeits exactly once, leaves the room and account history survives a new device and restart',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'yutverse-account-')),db=join(dir,'game.sqlite');let f=await open(db);
+ try{const a=await account(f,'player_one','첫 번째'),b=await account(f,'player_two','두 번째');const first=await f.connect(a.token),second=await f.connect(b.token);
+  const made=await request(first,'create',{capacity:2});await request(second,'join',{code:made.room!.code});await start([first,second]);
+  assert.equal((await fetch(f.url+'/api/auth/logout',{method:'POST',headers:{Authorization:`Bearer ${b.token}`}})).status,409);
+  assert.equal((await request(second,'exit')).ok,true);assert.equal((await request(second,'exit')).ok,false);
+  const room=await snapshot(first);assert.deepEqual(room.state!.ranks,[0,1]);assert.deepEqual(room.state!.forfeited,[1]);assert.equal('login' in room.members[0],false);
+  assert.equal(f.server.store.history(b.user.id).length,1);assert.equal(f.server.store.history(b.user.id)[0].forfeited,1);
+  await f.close();f=await open(db);const login=await (await signIn(f,'player_two')).json() as typeof b;
+  const records=await (await fetch(f.url+'/api/account/records',{headers:{Authorization:`Bearer ${login.token}`}})).json() as {online:{rank:number;points:number}[];summary:{games:number}};
+  assert.equal(records.online[0].rank,2);assert.equal(records.online[0].points,0);assert.equal(records.summary.games,1);
+ }finally{await f.close();rmSync(dir,{recursive:true,force:true})}
+});
+test('single records are account-isolated, idempotent and cannot change online ranking points',async()=>{
+ const f=await open();try{const a=await account(f,'single_one'),b=await account(f,'single_two');const headers={'Content-Type':'application/json',Authorization:`Bearer ${a.token}`};
+  const record={id:'12345678-1234-4123-8123-123456789abc',rank:2,players:2,turns:10,character:'mage',forfeited:true};
+  for(let i=0;i<2;i++)assert.equal((await fetch(f.url+'/api/account/single-record',{method:'POST',headers,body:JSON.stringify({...record,userId:b.user.id,points:99999})})).status,200);
+  const records=await (await fetch(f.url+'/api/account/records',{headers})).json() as {single:{rank:number}[];summary:{games:number;points:number}};assert.equal(records.single.length,1);assert.equal(records.single[0].rank,2);assert.equal(records.summary.games,0);assert.equal(records.summary.points,0);
+  assert.equal(f.server.store.singleHistory(b.user.id).length,0);assert.equal(f.server.store.leaderboard().length,0);
+  assert.equal((await fetch(f.url+'/api/account/single-record',{method:'POST',headers,body:JSON.stringify({...record,rank:1})})).status,400);
+  const login=await (await signIn(f,'single_one')).json() as typeof a;assert.equal((await (await fetch(f.url+'/api/account/records',{headers:{Authorization:`Bearer ${login.token}`}})).json()).single.length,1);
+ }finally{await f.close()}
+});
+test('registering an existing guest links the same user and keeps previous online history',async()=>{
+ const f=await open();try{const {clients,users}=await setupRoom(f,2);await start(clients);await request(clients[1],'exit');const upgraded=await account(f,'guest_upgraded','새 닉네임',users[1].token);
+  assert.equal(upgraded.user.id,users[1].id);assert.equal(f.server.store.history(upgraded.user.id).length,1);assert.equal(f.server.store.user(users[1].token),null);assert.equal(f.server.store.user(upgraded.token)!.name,'새 닉네임');
+ }finally{await f.close()}
+});
+test('expired sessions reject HTTP and socket actions, and repeated credential attempts are limited',async()=>{
+ const f=await open();try{const a=await account(f,'expiring_user'),socket=await f.connect(a.token);f.server.store.db.prepare('UPDATE auth_sessions SET expires_at=0').run();assert.equal((await fetch(f.url+'/api/auth/me',{headers:{Authorization:`Bearer ${a.token}`}})).status,401);assert.equal((await request(socket,'create',{capacity:2})).ok,false);
+  let limited=false;for(let i=0;i<25;i++){const response=await signIn(f,'expiring_user','bad');if(response.status===429){limited=true;break;}}assert.equal(limited,true);
+ }finally{await f.close()}
+});
+test('three-player exit removes a selection participant and finished players leave without losing rank',async()=>{
+ const f=await open();try{const {clients}=await setupRoom(f,3);await start(clients);assert.equal((await request(clients[0],'exit')).ok,true);let room=await snapshot(clients[1]);assert.equal(room.state!.selection!.player,1);assert.deepEqual(room.state!.forfeited,[0]);
+  assert.equal((await request(clients[1],'exit')).ok,true);room=await snapshot(clients[2]);assert.deepEqual(room.state!.ranks,[2,1,0]);assert.equal(f.server.store.history(room.members[0].id).length,1);
+ }finally{await f.close()}
+ const g=await open();try{const {clients}=await setupRoom(g,3);await start(clients);const room=[...g.server.rooms.values()][0];room.state!.ranks=[0];assert.equal((await request(clients[0],'exit')).ok,true);assert.deepEqual(room.state!.ranks,[0]);assert.equal(room.state!.forfeited.includes(0),false);
+ }finally{await g.close()}
+});
+test('room directory hides passwords, enforces locked joins and broadcasts occupancy and match status',async()=>{
+ const f=await open();try{const users=[],clients=[];for(let i=0;i<3;i++){const u=await f.session(`목록${i}`);users.push(u);clients.push(await f.connect(u.token));}
+  let latest:unknown[]=[];clients[2].on('rooms',list=>latest=list);
+  const made=await request(clients[0],'create',{capacity:2,title:'친구들의 비밀방',password:'room-secret-24',character:'echidna'});assert.equal(made.ok,true,made.error);const code=made.room!.code;
+  assert.equal('passwordHash' in made.room!,false);assert.equal('passwordSalt' in made.room!,false);assert.equal(JSON.stringify(f.server.store.rooms()).includes('room-secret-24'),false);
+  const listed=await request(clients[2],'rooms') as Reply&{rooms:{code:string;title:string;locked:boolean;count:number;status:string}[]};assert.equal(listed.rooms[0].title,'친구들의 비밀방');assert.equal(listed.rooms[0].locked,true);assert.equal(listed.rooms[0].count,1);assert.equal(JSON.stringify(listed.rooms).includes('password'),false);
+  assert.equal((await request(clients[1],'join',{code})).ok,false);assert.equal((await request(clients[1],'join',{code,password:'wrong'})).ok,false);
+  assert.equal((await request(clients[1],'join',{code,password:'room-secret-24',character:'galatur'})).ok,true);
+  await new Promise(r=>setTimeout(r,10));assert.equal((latest[0] as {status:string}).status,'full');assert.equal((await request(clients[2],'join',{code,password:'room-secret-24'})).ok,false);
+  await start(clients.slice(0,2));assert.equal(((await request(clients[2],'rooms')) as unknown as {rooms:{status:string}[]}).rooms[0].status,'playing');assert.deepEqual((await snapshot(clients[0])).state!.players.map(p=>p.character),['echidna','galatur']);
+  await request(clients[1],'exit');assert.deepEqual(((await request(clients[2],'rooms')) as unknown as {rooms:unknown[]}).rooms,[]);
+ }finally{await f.close()}
+});
+test('simultaneous password joins cannot overfill the last seat; room password survives restart',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'yutverse-lobby-')),db=join(dir,'game.sqlite');let f=await open(db);
+ try{const users=[];for(let i=0;i<3;i++)users.push(await f.session(`동시${i}`));const clients=[];for(const user of users)clients.push(await f.connect(user.token));const made=await request(clients[0],'create',{capacity:2,title:'동시 입장',password:'lock-secret'}),code=made.room!.code;
+  await f.close();f=await open(db);const restored=[];for(const user of users)restored.push(await f.connect(user.token));assert.equal((await request(restored[1],'join',{code,password:'bad'})).ok,false);
+  const results=await Promise.all([request(restored[1],'join',{code,password:'lock-secret'}),request(restored[2],'join',{code,password:'lock-secret'})]);assert.equal(results.filter(r=>r.ok).length,1);assert.equal((await snapshot(restored[0])).members.length,2);
+  const room=[...f.server.rooms.values()][0];assert.ok(room.passwordHash);assert.equal('passwordHash' in await snapshot(restored[0]),false);
+ }finally{await f.close();rmSync(dir,{recursive:true,force:true})}
+});

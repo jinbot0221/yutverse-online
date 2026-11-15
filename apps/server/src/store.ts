@@ -1,7 +1,11 @@
 import {DatabaseSync} from 'node:sqlite';
-import {randomBytes,randomUUID,createHash} from 'node:crypto';
+import {randomBytes,randomUUID,createHash,scrypt,timingSafeEqual} from 'node:crypto';
+import {promisify} from 'node:util';
 import type {State} from '@yutverse/engine';
 export const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
+const derive=promisify(scrypt);
+export type AccountUser={id:string;name:string;login:string|null};
+export type SingleRecord={id:string;rank:number;turns:number;players:number;character:string;forfeited:boolean};
 export class Store {
  readonly db:DatabaseSync;
  constructor(path:string){
@@ -10,10 +14,39 @@ export class Store {
    CREATE TABLE IF NOT EXISTS rooms(code TEXT PRIMARY KEY,data TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS matches(id TEXT PRIMARY KEY,finished_at TEXT NOT NULL,state TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS participants(match_id TEXT NOT NULL REFERENCES matches(id),user_id TEXT NOT NULL REFERENCES users(id),rank INTEGER NOT NULL,points INTEGER NOT NULL,forfeited INTEGER NOT NULL,PRIMARY KEY(match_id,user_id));
-   CREATE TABLE IF NOT EXISTS augment_choices(match_id TEXT NOT NULL,user_id TEXT NOT NULL,id TEXT NOT NULL,turn INTEGER NOT NULL,chosen_at INTEGER NOT NULL,PRIMARY KEY(match_id,user_id,id));`);
+   CREATE TABLE IF NOT EXISTS augment_choices(match_id TEXT NOT NULL,user_id TEXT NOT NULL,id TEXT NOT NULL,turn INTEGER NOT NULL,chosen_at INTEGER NOT NULL,PRIMARY KEY(match_id,user_id,id));
+   CREATE TABLE IF NOT EXISTS accounts(user_id TEXT PRIMARY KEY REFERENCES users(id),login TEXT NOT NULL UNIQUE COLLATE NOCASE,salt TEXT NOT NULL,password_hash TEXT NOT NULL);
+   CREATE TABLE IF NOT EXISTS auth_sessions(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),expires_at INTEGER NOT NULL);
+   CREATE INDEX IF NOT EXISTS auth_sessions_expiry ON auth_sessions(expires_at);
+   CREATE TABLE IF NOT EXISTS single_records(user_id TEXT NOT NULL REFERENCES users(id),id TEXT NOT NULL,finished_at TEXT NOT NULL,rank INTEGER NOT NULL,turns INTEGER NOT NULL,players INTEGER NOT NULL,character TEXT NOT NULL,forfeited INTEGER NOT NULL,PRIMARY KEY(user_id,id));`);
  }
  createUser(name:string){const token=randomBytes(32).toString('hex'),id=randomUUID();this.db.prepare('INSERT INTO users VALUES(?,?,?)').run(id,name,hash(token));return {id,name,token};}
- user(token:unknown):{id:string;name:string}|null{if(typeof token!=='string'||token.length!==64)return null;return (this.db.prepare('SELECT id,name FROM users WHERE token_hash=?').get(hash(token)) as {id:string;name:string}|undefined)||null;}
+ user(token:unknown):AccountUser|null{
+  if(typeof token!=='string'||!/^[a-f0-9]{64}$/.test(token))return null;
+  return (this.db.prepare(`SELECT u.id,u.name,a.login FROM users u LEFT JOIN accounts a ON a.user_id=u.id WHERE (a.user_id IS NULL AND u.token_hash=?) OR EXISTS(SELECT 1 FROM auth_sessions s WHERE s.user_id=u.id AND s.token_hash=? AND s.expires_at>?)`).get(hash(token),hash(token),Date.now()) as AccountUser|undefined)||null;
+ }
+ session(id:string){const token=randomBytes(32).toString('hex');this.db.prepare('DELETE FROM auth_sessions WHERE expires_at<=?').run(Date.now());this.db.prepare('INSERT INTO auth_sessions VALUES(?,?,?)').run(hash(token),id,Date.now()+30*86400000);return {token,user:this.db.prepare('SELECT u.id,u.name,a.login FROM users u JOIN accounts a ON a.user_id=u.id WHERE u.id=?').get(id) as AccountUser};}
+ async register(login:string,password:string,name:string,guest?:AccountUser|null){
+  const salt=randomBytes(16).toString('hex'),digest=await derive(password,salt,64) as Buffer;
+  if(this.db.prepare('SELECT 1 FROM accounts WHERE login=?').get(login))throw Error('이미 사용 중인 아이디입니다.');
+  if(guest?.login)throw Error('다른 계정을 만들려면 먼저 로그아웃하세요.');
+  const id=guest?.id||randomUUID();this.db.exec('BEGIN IMMEDIATE');try{
+   if(guest)this.db.prepare('UPDATE users SET name=?,token_hash=? WHERE id=?').run(name,hash(randomBytes(32).toString('hex')),id);
+   else this.db.prepare('INSERT INTO users VALUES(?,?,?)').run(id,name,hash(randomBytes(32).toString('hex')));
+   this.db.prepare('INSERT INTO accounts VALUES(?,?,?,?)').run(id,login,salt,digest.toString('hex'));this.db.exec('COMMIT');
+  }catch(error){this.db.exec('ROLLBACK');throw error;}
+  return this.session(id);
+ }
+ async login(login:string,password:string){
+  const account=this.db.prepare('SELECT user_id,salt,password_hash FROM accounts WHERE login=?').get(login) as {user_id:string;salt:string;password_hash:string}|undefined;
+  const digest=await derive(password,account?.salt||'yutverse-missing-account',64) as Buffer;
+  if(!account||!timingSafeEqual(digest,Buffer.from(account.password_hash,'hex')))return null;
+  return this.session(account.user_id);
+ }
+ revoke(token:string){this.db.prepare('DELETE FROM auth_sessions WHERE token_hash=?').run(hash(token));}
+ saveSingle(userId:string,record:SingleRecord){this.db.prepare('INSERT OR IGNORE INTO single_records VALUES(?,?,?,?,?,?,?,?)').run(userId,record.id,new Date().toISOString(),record.rank,record.turns,record.players,record.character,record.forfeited?1:0);}
+ singleHistory(userId:string){return this.db.prepare('SELECT id,finished_at,rank,turns,players,character,forfeited FROM single_records WHERE user_id=? ORDER BY finished_at DESC LIMIT 100').all(userId);}
+ summary(userId:string){return this.db.prepare('SELECT COUNT(*) AS games,COALESCE(SUM(points),0) AS points,COALESCE(SUM(CASE WHEN rank=1 THEN 1 ELSE 0 END),0) AS wins FROM participants WHERE user_id=?').get(userId);}
  saveRoom(room:{code:string;state:State|null;members:{id:string}[];matchId:string}){
   this.db.exec('BEGIN IMMEDIATE');try{
    this.db.prepare('INSERT INTO rooms VALUES(?,?) ON CONFLICT(code) DO UPDATE SET data=excluded.data').run(room.code,JSON.stringify(room));

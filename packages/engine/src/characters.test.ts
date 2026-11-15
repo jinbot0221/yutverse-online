@@ -10,7 +10,7 @@ test('selected heroes survive throws, stacked moves and captures without changin
  a.players[0].pieces[0]={node:'o2',history:[HOME,'o1']};a.players[0].pieces[1]=structuredClone(a.players[0].pieces[0]);a.players[1].pieces[0]={node:'o3',history:[HOME,'o1','o2']};
  const next=move(a,0,random,0);assert.deepEqual(next.players.map(p=>p.character),['archer','mage']);assert.equal(next.players[0].pieces[1].node,'o3');assert.equal(next.players[1].pieces[0].node,HOME);
 });
-test('old saved games with no hero still resolve to a playable default; all five heroes are distinct',()=>{
- assert.equal(character(undefined).id,'knight');assert.equal(character('old-unavailable-hero').id,'knight');assert.equal(new Set(CHARACTERS.map(c=>c.id)).size,5);
+test('old saved games with no hero still resolve to a playable default; all available heroes are distinct',()=>{
+ assert.equal(character(undefined).id,'knight');assert.equal(character('old-unavailable-hero').id,'knight');assert.equal(new Set(CHARACTERS.map(c=>c.id)).size,13);
  const legacy=createGame(2);delete legacy.players[0].character;assert.notEqual(throwYut(legacy,()=>.7),legacy);
 });

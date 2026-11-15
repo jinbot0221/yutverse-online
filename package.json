@@ -19,7 +19,9 @@
     "test:game-view": "node scripts/game-view-smoke.cjs",
     "test:animation": "node scripts/animation-smoke.cjs",
     "test:rules-browser": "node scripts/rules-browser-smoke.cjs",
-    "test:characters-browser": "node scripts/characters-browser-smoke.cjs"
+    "test:characters-browser": "node scripts/characters-browser-smoke.cjs",
+    "test:accounts-browser": "node scripts/accounts-browser-smoke.cjs",
+    "test:rooms-browser": "node scripts/rooms-browser-smoke.cjs"
   },
   "devDependencies": {
     "playwright": "^1.65.0",

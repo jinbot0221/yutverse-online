@@ -12,7 +12,7 @@ const assert=require('node:assert/strict');
   s.players[1].pieces[0]={node:'o10',history:[]};s.players[2].pieces[0]={node:'c',history:[]};s.players[3].pieces[0]={node:'o20',history:[]};
   for(const [name,width,height] of [['desktop',1440,900],['mobile',390,844],['landscape',844,390]]){
    const context=await browser.newContext({viewport:{width,height}});const p=await context.newPage();const errors=[];p.on('pageerror',e=>errors.push(e.message));
-   await p.addInitScript(state=>localStorage.setItem('yutverse.game',JSON.stringify(state)),s);
+   await p.addInitScript(state=>{localStorage.setItem('yutverse.offline','true');localStorage.setItem('yutverse.game',JSON.stringify(state))},s);
    await p.goto(process.env.YUTVERSE_URL||'http://localhost:5173');await p.locator('.token-label').first().waitFor();await p.waitForTimeout(1500);
    const canvas=await p.locator('canvas').boundingBox();assert.equal(Math.round(canvas.width),width);assert.equal(Math.round(canvas.height),height);
    const layout=await p.evaluate(()=>({scroll:document.documentElement.scrollHeight,h:innerHeight,overflow:document.documentElement.scrollWidth>innerWidth,labels:[...document.querySelectorAll('.token-label')].map(e=>{const r=e.getBoundingClientRect();return {text:e.textContent,x:r.x,y:r.y,w:r.width,h:r.height}})}));
