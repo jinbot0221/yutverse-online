@@ -17,6 +17,7 @@ export class Store {
    CREATE TABLE IF NOT EXISTS augment_choices(match_id TEXT NOT NULL,user_id TEXT NOT NULL,id TEXT NOT NULL,turn INTEGER NOT NULL,chosen_at INTEGER NOT NULL,PRIMARY KEY(match_id,user_id,id));
    CREATE TABLE IF NOT EXISTS accounts(user_id TEXT PRIMARY KEY REFERENCES users(id),login TEXT NOT NULL UNIQUE COLLATE NOCASE,salt TEXT NOT NULL,password_hash TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS auth_sessions(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),expires_at INTEGER NOT NULL);
+   CREATE TABLE IF NOT EXISTS augment_choice_events(match_id TEXT NOT NULL,user_id TEXT NOT NULL,sequence INTEGER NOT NULL,id TEXT NOT NULL,turn INTEGER NOT NULL,chosen_at INTEGER NOT NULL,PRIMARY KEY(match_id,sequence));
    CREATE TABLE IF NOT EXISTS account_recovery(user_id TEXT PRIMARY KEY REFERENCES users(id),code_hash TEXT NOT NULL UNIQUE);
    CREATE INDEX IF NOT EXISTS auth_sessions_expiry ON auth_sessions(expires_at);
    CREATE TABLE IF NOT EXISTS single_records(user_id TEXT NOT NULL REFERENCES users(id),id TEXT NOT NULL,finished_at TEXT NOT NULL,rank INTEGER NOT NULL,turns INTEGER NOT NULL,players INTEGER NOT NULL,character TEXT NOT NULL,forfeited INTEGER NOT NULL,PRIMARY KEY(user_id,id));`);
@@ -58,7 +59,7 @@ export class Store {
  saveRoom(room:{code:string;state:State|null;members:{id:string}[];matchId:string}){
   this.db.exec('BEGIN IMMEDIATE');try{
    this.db.prepare('INSERT INTO rooms VALUES(?,?) ON CONFLICT(code) DO UPDATE SET data=excluded.data').run(room.code,JSON.stringify(room));
-   if(room.state){for(const c of room.state.choices)this.db.prepare('INSERT OR IGNORE INTO augment_choices VALUES(?,?,?,?,?)').run(room.matchId,room.members[c.player].id,c.id,c.turn,c.at);}
+   if(room.state){room.state.choices.forEach((c,sequence)=>{this.db.prepare('INSERT OR IGNORE INTO augment_choices VALUES(?,?,?,?,?)').run(room.matchId,room.members[c.player].id,c.id,c.turn,c.at);this.db.prepare('INSERT OR IGNORE INTO augment_choice_events VALUES(?,?,?,?,?,?)').run(room.matchId,room.members[c.player].id,sequence,c.id,c.turn,c.at);});}
    if(room.state?.phase==='over'){
     const saved=this.db.prepare('INSERT OR IGNORE INTO matches VALUES(?,?,?)').run(room.matchId,new Date().toISOString(),JSON.stringify(room.state));
     if(saved.changes){room.state.ranks.forEach((player,index)=>{const points=room.members.length===2?[20,0][index]:room.members.length===3?[30,10,0][index]:[40,20,5,0][index];this.db.prepare('INSERT INTO participants VALUES(?,?,?,?,?)').run(room.matchId,room.members[player].id,index+1,points,room.state!.forfeited.includes(player)?1:0);});}

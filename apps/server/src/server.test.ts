@@ -136,7 +136,7 @@ test('hero choices synchronize, reset readiness and are locked once a match star
   assert.equal((await request(clients[0],'character',{character:'unknown'})).ok,false);
   assert.equal((await snapshot(clients[1])).members[0].ready,true);
   assert.equal((await request(clients[0],'character',{character:'dwarf',userId:users[1].id})).ok,true);
-  let view=await snapshot(clients[1]);assert.equal(view.members[0].character,'dwarf');assert.equal(view.members[0].ready,false);assert.equal(view.members[1].character,'knight');
+  let view=await snapshot(clients[1]);assert.equal(view.members[0].character,'dwarf');assert.equal(view.members[0].ready,false);assert.equal(view.members[1].character,'otter');
   assert.equal((await request(clients[1],'character',{character:'archer'})).ok,true);await start(clients);
   view=await snapshot(clients[0]);assert.deepEqual(view.state!.players.map(p=>p.character),['dwarf','archer']);
   assert.equal((await request(clients[0],'character',{character:'mage'})).ok,false);assert.deepEqual((await snapshot(clients[1])).state!.players.map(p=>p.character),['dwarf','archer']);
@@ -238,5 +238,9 @@ test('legacy accounts can issue a recovery code only with their current password
   const changed=await (await issue('a-test-password-24')).json() as {recoveryCode:string};assert.equal(f.server.store.recoveryAccount(issued.recoveryCode),null);assert.ok(f.server.store.recoveryAccount(changed.recoveryCode));
   const short=await fetch(f.url+'/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login:'legacy_recovery',password:'a-test-password-24',remember:false})});assert.equal(short.status,200);
   const times=f.server.store.db.prepare('SELECT expires_at FROM auth_sessions').all().map(r=>Number(r.expires_at)-Date.now());assert.ok(times.some(t=>t>11*3600000&&t<=12*3600000));assert.ok(times.some(t=>t>29*86400000&&t<=30*86400000));
+ }finally{await f.close()}
+});
+test('repeated basic-card choices persist as separate events without duplicating slots',async()=>{
+ const f=await open();try{const {clients}=await setupRoom(f,2);await start(clients);await chooseInitial(clients);const room=[...f.server.rooms.values()][0];for(let i=0;i<5;i++){pace(f);room.state!.phase='augment';room.state!.selection={player:0,offers:['shield','boost','back-guard'],queue:[],deadline:f.clock.time+60000};assert.equal((await action(clients[0],'choose',{id:'shield'})).ok,true);}assert.equal(room.state!.players[0].slots.filter(s=>s.id==='shield').length,1);assert.equal(f.server.store.db.prepare('SELECT COUNT(*) AS n FROM augment_choice_events').get()!.n,7);
  }finally{await f.close()}
 });

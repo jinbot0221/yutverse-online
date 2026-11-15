@@ -3,7 +3,7 @@ export const CHARACTER_ATLASES={
  legends:{url:'/characters/legends.png',columns:3,rows:1},
  challengers:{url:'/characters/challengers.png',columns:3,rows:2},
 } as const;
-export const CHARACTERS = [
+export const LEGACY_CHARACTERS = [
  {id:'dwarf',name:'바훈투르',title:'드워프 전사',description:'붉은 수염과 거대한 불꽃 망치',atlas:'heroes',column:0,row:0,foot:.24},
  {id:'archer',name:'니나브',title:'엘프 궁수',description:'하얀 날개와 푸른빛 화살',atlas:'heroes',column:1,row:0,foot:.24},
  {id:'fighter',name:'샨디',title:'무투가',description:'푸른 사자의 기운을 두른 무투가',atlas:'heroes',column:2,row:0,foot:.24},
@@ -18,7 +18,14 @@ export const CHARACTERS = [
  {id:'galatur',name:'갈라투르',title:'전설의 대장장이',description:'거대한 용암 망치와 흰 수염의 장인',atlas:'legends',column:1,row:0,foot:.09},
  {id:'aman',name:'아만',title:'빛의 사제',description:'푸른 망토와 신비로운 빛의 사제',atlas:'legends',column:2,row:0,foot:.09},
 ] as const;
-export type CharacterId=typeof CHARACTERS[number]['id'];
-export const DEFAULT_CHARACTER:CharacterId='knight';
-export function isCharacterId(id:unknown):id is CharacterId{return typeof id==='string'&&CHARACTERS.some(c=>c.id===id);}
-export function character(id:unknown){return CHARACTERS.find(c=>c.id===id)||CHARACTERS.find(c=>c.id===DEFAULT_CHARACTER)!;}
+export const CHARACTERS=[
+ {id:'otter',name:'수달',title:'동물 친구',description:'동그란 귀와 폭신한 볼을 가진 수달',color:'#9a6545'},
+ {id:'squirrel',name:'다람쥐',title:'동물 친구',description:'통통한 볼과 작은 앞니가 귀여운 다람쥐',color:'#c38441'},
+ {id:'cat',name:'고양이',title:'동물 친구',description:'쫑긋한 귀와 분홍 코의 고양이',color:'#aab7c7'},
+ {id:'dog',name:'강아지',title:'동물 친구',description:'축 처진 귀와 동그란 눈의 강아지',color:'#d29b65'},
+] as const;
+export type AnimalId=typeof CHARACTERS[number]['id'];
+export type CharacterId=AnimalId|typeof LEGACY_CHARACTERS[number]['id'];
+export const DEFAULT_CHARACTER:AnimalId='otter';
+export function isCharacterId(id:unknown):id is CharacterId{return typeof id==='string'&&[...CHARACTERS,...LEGACY_CHARACTERS].some(c=>c.id===id);}
+export function character(id:unknown){return CHARACTERS.find(c=>c.id===id)||CHARACTERS[Math.max(0,LEGACY_CHARACTERS.findIndex(c=>c.id===id))%CHARACTERS.length];}

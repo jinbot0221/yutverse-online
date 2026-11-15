@@ -63,7 +63,7 @@ function ProjectLabels({tokens,elements,animation}:{tokens:VisibleToken[];elemen
   for(const token of tokens){
    const element=elements.get(token.key);if(!element)continue;
    const pose=samplePose(token,animation,animation?performance.now()-animation.start:0);
-   point.current.set(pose.x,pose.y-.16+3.7*pose.scale,pose.z).project(camera);element.dataset.motion=pose.kind;
+   point.current.set(pose.x,pose.y-.16+2.65*pose.scale,pose.z).project(camera);element.dataset.motion=pose.kind;
    const x=(point.current.x+1)*size.width/2,y=(1-point.current.y)*size.height/2;
    element.style.transform=`translate3d(${x}px,${y}px,0) translate(-50%,-50%)`;
    element.style.visibility=pose.scale<.05||point.current.z<-1||point.current.z>1?'hidden':'visible';

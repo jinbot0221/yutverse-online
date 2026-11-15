@@ -24,7 +24,8 @@
     "test:rooms-browser": "node scripts/rooms-browser-smoke.cjs",
     "test:online-layout": "node scripts/online-layout-smoke.cjs",
     "test:recovery-browser": "node scripts/recovery-browser-smoke.cjs",
-    "test:turn-augments": "node scripts/turn-augments-browser-smoke.cjs"
+    "test:turn-augments": "node scripts/turn-augments-browser-smoke.cjs",
+    "test:family-browser": "node scripts/family-browser-smoke.cjs"
   },
   "devDependencies": {
     "playwright": "^1.65.0",

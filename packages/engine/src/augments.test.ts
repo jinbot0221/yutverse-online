@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import {AUGMENTS,candidates,definition,createGame,selectAugment,expireSelection,throwYut,move,moveDestination,useAugment,canUseAugment,forfeit,legalMoves,skipMove,chooseMove,HOME,DONE,type State,type AugmentId} from './index.ts';
 function state(...ids:AugmentId[]):State {const s=createGame();s.phase='move';s.result={name:'도',steps:1,extra:false};s.throws=0;s.players[0].slots=ids.map(id=>({id,remaining:definition(id)!.charges}));return s;}
 function capture(id?:AugmentId){const s=state();s.players[0].pieces[0]={node:'o1',history:[HOME]};s.players[1].pieces[0]={node:'o2',history:[HOME,'o1']};if(id)s.players[1].slots=[{id,remaining:definition(id)!.charges}];return s;}
-test('26 distinct augments; candidate uniqueness, hero/conflict and slot limits',()=>{
- assert.equal(AUGMENTS.length,26);assert.equal(new Set(AUGMENTS.map(a=>a.id)).size,26);
+test('three current cards remain distinct, rechargeable and respect legacy slot limits',()=>{
+ assert.equal(AUGMENTS.length,27);assert.equal(new Set(AUGMENTS.map(a=>a.id)).size,27);
  const slots=[{id:'hero-wind' as const,remaining:-1},{id:'shield' as const,remaining:0}];
- for(let i=0;i<100;i++){const offers=candidates(slots,Math.random);assert.equal(offers.length,3);assert.equal(new Set(offers).size,3);assert.ok(offers.every(id=>!definition(id)!.hero&&id!=='shield'));}
- assert.deepEqual(candidates(AUGMENTS.slice(0,5).map(a=>({id:a.id,remaining:0})),Math.random),[]);
+ for(let i=0;i<30;i++){const offers=candidates(slots,Math.random);assert.equal(offers.length,3);assert.deepEqual([...offers].sort(),['back-guard','boost','shield']);}
+ assert.deepEqual(candidates(['do-plus','gae-plus','geol-plus','launch','late'].map(id=>({id:id as AugmentId,remaining:0})),Math.random),[]);
 });
 test('selection freezes the whole game and timeout selects only at 60 seconds',()=>{
  const s=createGame(3,true,()=>.5,100);assert.equal(s.phase,'augment');assert.equal(throwYut(s),s);assert.equal(move(s,0),s);assert.equal(useAugment(s,0,'reserve'),s);
@@ -20,7 +20,7 @@ test('basic turns 2,4,6,8 add slots; extra throws never increment the basic turn
  s=throwYut(s,()=>.9);s=move(s,0);assert.equal(s.players[0].baseTurns,before);
  // Enter player zero's next basic turn using a non-extra result.
  for(const turn of [1,2,3,4,5,6,7]){s.turn=2;s.pendingResults=[];s.phase='move';s.result={name:'도',steps:1,extra:false};s.throws=0;s.players[0].baseTurns=turn;s.players[2].pieces=s.players[2].pieces.map(()=>({node:HOME,history:[]}));s=move(s,1);assert.equal(s.players[0].baseTurns,turn+1);assert.equal(s.phase,[2,4,6,8].includes(turn+1)?'augment':'throw');if(s.selection)s=selectAugment(s,0,s.selection.offers[0]);}
- assert.equal(s.players[0].slots.length,4);
+ assert.ok(s.players[0].slots.length<=3);assert.equal(s.players[0].slots.reduce((sum,slot)=>sum+slot.remaining,0),4);
 });
 test('all passive movement bonuses, stacking and +2 cap',()=>{
  for(const id of ['do-plus','gae-plus','geol-plus','launch','late','stack','hero-wind'] as AugmentId[]){

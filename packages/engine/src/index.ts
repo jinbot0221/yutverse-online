@@ -1,4 +1,4 @@
-import {available,candidates,definition,eligible,type Slot,type AugmentId} from './augments.ts';
+import {available,candidates,definition,eligible,ACTIVE_AUGMENT_IDS,type Slot,type AugmentId} from './augments.ts';
 import {CHARACTERS,DEFAULT_CHARACTER,type CharacterId} from './characters.ts';
 export * from './characters.ts';
 export * from './augments.ts';
@@ -8,7 +8,7 @@ export type Player = { name: string; pieces: Piece[]; slots:Slot[]; baseTurns:nu
 export type Route='outer'|'diagonal'|'homeward'|'far';
 export type PlayerCount = 2|3|4;
 export type MoveEvent = {id:number;player:number;indices:number[];path:string[];captures:{player:number;indices:number[];from:string;to:string}[]};
-export type State = { players: Player[]; turn: number; phase: 'throw'|'move'|'augment'|'over'; result: Result|null; throws: number; ranks: number[]; log: string[]; turns: number; version:2; augmented:boolean; forfeited:number[]; selection:{player:number;offers:AugmentId[];deadline:number;queue:number[]}|null; choices:{player:number;id:AugmentId;turn:number;at:number}[]; lastMove?:MoveEvent; pendingResults?:Result[]; lastThrow?:{id:number;player:number;result:Result} };
+export type State = { players: Player[]; turn: number; phase: 'throw'|'move'|'augment'|'over'; result: Result|null; throws: number; ranks: number[]; log: string[]; turns: number; version:2; augmented:boolean; forfeited:number[]; selection:{player:number;offers:AugmentId[];deadline:number;queue:number[]}|null; choices:{player:number;id:AugmentId;turn:number;at:number}[]; lastMove?:MoveEvent; pendingResults?:Result[]; lastThrow?:{id:number;player:number;result:Result;guarded?:boolean} };
 export const HOME = 'home', DONE = 'done';
 export function createGame(count: PlayerCount = 3, augmented=false, random:()=>number=Math.random, now=Date.now(),characters:CharacterId[]=[]): State {
  if(![2,3,4].includes(count))throw Error('Player count must be 2, 3 or 4.');
@@ -62,12 +62,13 @@ function finishMatch(s:State){
 function offer(s:State,queue:number[],random:()=>number,now:number):State {
  const [player,...rest]=queue;
  if(player===undefined){s.phase='throw';s.selection=null;return s;}
- s.phase='augment';s.selection={player,queue:rest,offers:candidates(s.players[player].slots,random),deadline:now+60000};return s;
+ const offers=candidates(s.players[player].slots,random);if(!offers.length)return offer(s,rest,random,now);
+ s.phase='augment';s.selection={player,queue:rest,offers,deadline:now+60000};return s;
 }
 export function selectAugment(state:State,player:number,id:string,random:()=>number=Math.random,now=Date.now()):State {
  const q=state.selection,def=definition(id);
  if(state.phase!=='augment'||!q||q.player!==player||!def||!q.offers.includes(def.id)||!eligible(state.players[player].slots,def))return state;
- const s=clone(state);s.players[player].slots.push({id:def.id,remaining:def.charges});s.choices.push({player,id:def.id,turn:s.players[player].baseTurns,at:now});
+ const s=clone(state),existing=s.players[player].slots.find(slot=>slot.id===def.id);if(existing&&ACTIVE_AUGMENT_IDS.includes(def.id))existing.remaining++;else s.players[player].slots.push({id:def.id,remaining:def.charges});s.choices.push({player,id:def.id,turn:s.players[player].baseTurns,at:now});
  s.log=[`${s.players[player].name}: ${def.name} 획득`,...s.log].slice(0,12);
  return offer(s,q.queue.filter(i=>!eliminated(s,i)),random,now);
 }
@@ -144,7 +145,7 @@ export function useAugment(state:State,player:number,id:string,random:()=>number
  const oldId=state.result?.id;
  const s=clone(state),slot=s.players[player].slots.find(a=>a.id===id)!;slot.remaining--;
  if(['reserve','double-reserve','hero-pouch'].includes(id))addThrows(s,id==='reserve'?1:id==='double-reserve'?2:3);
- else if(id==='reroll'){if(s.result!.extra&&!s.result!.extraSettled)s.throws=Math.max(0,s.throws-1);s.result={...roll(random),id:(s.lastThrow?.id||0)+1,extraSettled:true};if(s.result.extra)s.throws++;s.lastThrow={id:s.result.id!,player,result:structuredClone(s.result)};applyThrowAugments(s,s.result);}
+ else if(id==='reroll'){if(s.result!.extra&&!s.result!.extraSettled)s.throws=Math.max(0,s.throws-1);s.result={...roll(random),id:(s.lastThrow?.id||0)+1,extraSettled:true};if(s.result.extra)s.throws++;s.lastThrow={id:s.result.id!,player,result:structuredClone(s.result)};applyThrowAugments(s,s.result);if(guardBackDo(s,s.result)){s.pendingResults=s.pendingResults?.filter(r=>r.id!==oldId)||[];s.result=null;}}
  else if(id==='forward')s.result={...s.result!,steps:1,name:'도'};
  else if(id==='steady')s.result={...s.result!,steps:2,name:'고정 개',bonus:0};
  else s.result!.bonus=Math.min(2,(s.result!.bonus||0)+(id==='leap'?2:1));
@@ -158,6 +159,7 @@ function trigger(s:State,player:number,id:AugmentId,oncePerTurn=false):boolean {
  const slot=available(s.players[player].slots,id);if(!slot||(oncePerTurn&&slot.usedTurn===s.players[player].baseTurns))return false;
  if(slot.remaining>0)slot.remaining--;slot.usedTurn=s.players[player].baseTurns;return true;
 }
+function guardBackDo(s:State,result:Result){if(result.steps!==-1||!trigger(s,s.turn,'back-guard'))return false;s.throws++;if(s.lastThrow)s.lastThrow.guarded=true;s.log.unshift(`${s.players[s.turn].name}: 빽도 까방권 발동! 다시 던집니다.`);return true;}
 function applyThrowAugments(s:State,result:Result){
  if(s.throws<4&&trigger(s,s.turn,'first-boost'))addThrows(s,1);
  if(s.throws<4&&s.players[s.turn].baseTurns>0&&s.players[s.turn].baseTurns%3===0&&trigger(s,s.turn,'steady-pocket',true))addThrows(s,1);
@@ -170,6 +172,7 @@ export function throwYut(state:State,random:()=>number=Math.random,now=Date.now(
  s.throws--;if(result.extra)s.throws++;
  s.lastThrow={id:result.id!,player:s.turn,result:structuredClone(result)};
  applyThrowAugments(s,result);
+ if(guardBackDo(s,result)){s.result=null;s.phase='throw';return s;}
  s.pendingResults=[...(s.pendingResults||[]),result];s.result=null;
  s.log=[`${s.players[s.turn].name}: ${result.name}`,...s.log].slice(0,12);
  if(s.throws>0){s.phase='throw';return s;}return settleResults(s,random,now);

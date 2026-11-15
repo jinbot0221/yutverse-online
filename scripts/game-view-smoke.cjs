@@ -13,7 +13,7 @@ const assert=require('node:assert/strict');
   for(const [name,width,height] of [['desktop',1440,900],['mobile',390,844],['landscape',844,390]]){
    const context=await browser.newContext({viewport:{width,height}});const p=await context.newPage();const errors=[];p.on('pageerror',e=>errors.push(e.message));
    await p.addInitScript(state=>{localStorage.setItem('yutverse.offline','true');localStorage.setItem('yutverse.game',JSON.stringify(state))},s);
-   await p.goto(process.env.YUTVERSE_URL||'http://localhost:5173');await p.locator('.token-label').first().waitFor();await p.waitForTimeout(1500);
+   await p.goto(process.env.YUTVERSE_URL||'http://localhost:5173');await p.locator('.mode-menu').getByRole('button',{name:'싱글플레이',exact:true}).click();await p.locator('.token-label').first().waitFor();await p.waitForTimeout(1500);
    const canvas=await p.locator('canvas').boundingBox();assert.equal(Math.round(canvas.width),width);assert.equal(Math.round(canvas.height),height);
    const layout=await p.evaluate(()=>({scroll:document.documentElement.scrollHeight,h:innerHeight,overflow:document.documentElement.scrollWidth>innerWidth,labels:[...document.querySelectorAll('.token-label')].map(e=>{const r=e.getBoundingClientRect();return {text:e.textContent,x:r.x,y:r.y,w:r.width,h:r.height}})}));
    assert.equal(layout.overflow,false);assert.ok(layout.scroll<=height+1);assert.equal(await p.locator('.token-label .stack-count').first().textContent(),'×2');assert.equal(layout.labels.length,15);for(const label of layout.labels){assert.ok(label.x>=0&&label.x+label.w<=width&&label.y>=0&&label.y+label.h<=height,JSON.stringify(label));}
