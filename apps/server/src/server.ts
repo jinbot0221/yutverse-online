@@ -24,18 +24,23 @@ export function createGameServer(options:Options){
  app.post('/api/auth/register',async(req,res)=>{
   if(!limit(`auth:${req.socket.remoteAddress}`,20,60000))return void res.status(429).json({error:'잠시 후 다시 시도하세요.'});
   const {login,password,nickname}=req.body||{};
+  if(req.body?.remember!==undefined&&typeof req.body.remember!=='boolean')return void res.status(400).json({error:'로그인 유지 설정이 잘못되었습니다.'});
   if(typeof login!=='string'||!/^[a-zA-Z0-9_]{4,24}$/.test(login))return void res.status(400).json({error:'아이디는 영문·숫자·밑줄 4~24자입니다.'});
   if(typeof password!=='string'||password.length<8||password.length>128)return void res.status(400).json({error:'비밀번호는 8~128자입니다.'});
   if(typeof nickname!=='string'||!nickname.trim()||nickname.trim().length>16)return void res.status(400).json({error:'닉네임은 1~16자입니다.'});
   const guest=store.user(bearer(req));if(guest?.login)return void res.status(409).json({error:'다른 계정을 만들려면 먼저 로그아웃하세요.'});
-  try{res.status(201).json(await store.register(login.toLowerCase(),password,nickname.trim(),guest));}catch(error){const duplicate=error instanceof Error&&error.message==='이미 사용 중인 아이디입니다.';res.status(duplicate?409:500).json({error:duplicate?'이미 사용 중인 아이디입니다.':'회원가입을 완료하지 못했습니다. 잠시 후 다시 시도하세요.'});}
+  try{res.status(201).json(await store.register(login.toLowerCase(),password,nickname.trim(),guest,req.body.remember!==false));}catch(error){const duplicate=error instanceof Error&&error.message==='이미 사용 중인 아이디입니다.';res.status(duplicate?409:500).json({error:duplicate?'이미 사용 중인 아이디입니다.':'회원가입을 완료하지 못했습니다. 잠시 후 다시 시도하세요.'});}
  });
  app.post('/api/auth/login',async(req,res)=>{
   if(!limit(`auth:${req.socket.remoteAddress}`,20,60000))return void res.status(429).json({error:'잠시 후 다시 시도하세요.'});
   const {login,password}=req.body||{};
+  if(req.body?.remember!==undefined&&typeof req.body.remember!=='boolean')return void res.status(400).json({error:'로그인 유지 설정이 잘못되었습니다.'});
   if(typeof login!=='string'||!/^[a-zA-Z0-9_]{4,24}$/.test(login)||typeof password!=='string'||password.length<8||password.length>128)return void res.status(401).json({error:'아이디 또는 비밀번호를 확인하세요.'});
-  const account=await store.login(login.toLowerCase(),password);if(!account)return void res.status(401).json({error:'아이디 또는 비밀번호를 확인하세요.'});res.json(account);
+  const account=await store.login(login.toLowerCase(),password,req.body.remember!==false);if(!account)return void res.status(401).json({error:'아이디 또는 비밀번호를 확인하세요.'});res.json(account);
  });
+ app.post('/api/auth/recover-id',(req,res)=>{if(!limit(`recovery:${req.socket.remoteAddress}`,8,60000))return void res.status(429).json({error:'잠시 후 다시 시도하세요.'});const account=store.recoveryAccount(req.body?.code);if(!account)return void res.status(400).json({error:'복구코드를 확인하세요.'});res.json({login:account.login,nickname:account.name});});
+ app.post('/api/auth/reset-password',async(req,res)=>{if(!limit(`recovery:${req.socket.remoteAddress}`,8,60000))return void res.status(429).json({error:'잠시 후 다시 시도하세요.'});if(typeof req.body?.code!=='string'||typeof req.body?.password!=='string'||req.body.password.length<8||req.body.password.length>128)return void res.status(400).json({error:'복구코드와 8~128자의 새 비밀번호를 입력하세요.'});const result=await store.resetPassword(req.body.code,req.body.password);if(!result)return void res.status(400).json({error:'복구코드를 확인하세요.'});io.sockets.sockets.get(sessions.get(result.id)||'')?.disconnect(true);res.json({login:result.login,recoveryCode:result.recoveryCode});});
+ app.post('/api/auth/recovery-code',async(req,res)=>{const token=bearer(req),user=store.user(token);if(!user?.login)return void res.status(401).json({error:'로그인이 필요합니다.'});if(!limit(`issue-recovery:${user.id}`,5,60000))return void res.status(429).json({error:'잠시 후 다시 시도하세요.'});if(typeof req.body?.password!=='string'||req.body.password.length<8||req.body.password.length>128)return void res.status(400).json({error:'현재 비밀번호를 입력하세요.'});const checked=await store.login(user.login,req.body.password,false);if(!checked)return void res.status(401).json({error:'현재 비밀번호를 확인하세요.'});store.revoke(checked.token);if(!store.user(token))return void res.status(401).json({error:'다시 로그인하세요.'});res.json({recoveryCode:store.issueRecovery(user.id)});});
  app.get('/api/auth/me',(req,res)=>{const user=store.user(bearer(req));if(!user)return void res.status(401).json({error:'다시 로그인하세요.'});res.json({user});});
  app.post('/api/auth/logout',(req,res)=>{
   const token=bearer(req),user=store.user(token);if(!user||!token)return void res.status(401).json({error:'다시 로그인하세요.'});

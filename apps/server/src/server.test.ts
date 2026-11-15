@@ -218,3 +218,25 @@ test('simultaneous password joins cannot overfill the last seat; room password s
   const room=[...f.server.rooms.values()][0];assert.ok(room.passwordHash);assert.equal('passwordHash' in await snapshot(restored[0]),false);
  }finally{await f.close();rmSync(dir,{recursive:true,force:true})}
 });
+test('recovery codes find IDs, reset passwords exactly once, and revoke all old sessions',async()=>{
+ const f=await open();try{
+  const r=await fetch(f.url+'/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login:'recover_me',password:'original-password',nickname:'복구여행자'})});assert.equal(r.status,201);const a=await r.json() as {token:string;recoveryCode:string;user:{id:string}};
+  assert.ok(a.recoveryCode);assert.equal(JSON.stringify(f.server.store.db.prepare('SELECT * FROM account_recovery').all()).includes(a.recoveryCode.replaceAll('-','').toLowerCase()),false);
+  const post=(path:string,data:object)=>fetch(f.url+'/api/auth/'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  assert.equal((await post('recover-id',{code:'bad-code'})).status,400);const found=await (await post('recover-id',{code:a.recoveryCode.toLowerCase()})).json();assert.deepEqual(found,{login:'recover_me',nickname:'복구여행자'});
+  const second=await (await signIn(f,'recover_me','original-password')).json() as {token:string};const socket=await f.connect(second.token);
+  const resets=await Promise.all([post('reset-password',{code:a.recoveryCode,password:'new-password-one'}),post('reset-password',{code:a.recoveryCode,password:'new-password-two'})]);assert.deepEqual(resets.map(r=>r.status).sort(),[200,400]);const winner=resets[0].status===200?0:1;const next=await resets[winner].json() as {recoveryCode:string};assert.notEqual(next.recoveryCode,a.recoveryCode);
+  assert.equal(f.server.store.user(a.token),null);assert.equal(f.server.store.user(second.token),null);await new Promise(r=>setTimeout(r,20));assert.equal(socket.connected,false);
+  assert.equal((await signIn(f,'recover_me','original-password')).status,401);assert.equal((await signIn(f,'recover_me',winner===0?'new-password-one':'new-password-two')).status,200);
+  assert.equal((await post('recover-id',{code:a.recoveryCode})).status,400);assert.equal((await post('recover-id',{code:next.recoveryCode})).status,200);
+ }finally{await f.close()}
+});
+test('legacy accounts can issue a recovery code only with their current password; remember changes session lifetime',async()=>{
+ const f=await open();try{const a=await account(f,'legacy_recovery');f.server.store.db.prepare('DELETE FROM account_recovery WHERE user_id=?').run(a.user.id);
+  const issue=(password:string,token=a.token)=>fetch(f.url+'/api/auth/recovery-code',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({password})});
+  assert.equal((await issue('incorrect-password')).status,401);assert.equal((await issue('a-test-password-24','bad')).status,401);const issued=await (await issue('a-test-password-24')).json() as {recoveryCode:string};assert.equal(f.server.store.recoveryAccount(issued.recoveryCode)!.user_id,a.user.id);assert.ok(f.server.store.user(a.token));
+  const changed=await (await issue('a-test-password-24')).json() as {recoveryCode:string};assert.equal(f.server.store.recoveryAccount(issued.recoveryCode),null);assert.ok(f.server.store.recoveryAccount(changed.recoveryCode));
+  const short=await fetch(f.url+'/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login:'legacy_recovery',password:'a-test-password-24',remember:false})});assert.equal(short.status,200);
+  const times=f.server.store.db.prepare('SELECT expires_at FROM auth_sessions').all().map(r=>Number(r.expires_at)-Date.now());assert.ok(times.some(t=>t>11*3600000&&t<=12*3600000));assert.ok(times.some(t=>t>29*86400000&&t<=30*86400000));
+ }finally{await f.close()}
+});
