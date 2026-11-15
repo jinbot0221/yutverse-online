@@ -1,4 +1,4 @@
-import {useEffect,useRef} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import {Canvas,useThree,useFrame} from '@react-three/fiber';
 import {OrbitControls,Line} from '@react-three/drei';
 import {OrthographicCamera,Vector3,type Group,type MeshBasicMaterial} from 'three';
@@ -23,18 +23,23 @@ function PlaybackClock<T extends AnimationPlan|ThrowAnimation>({plan,onEnd}:{pla
 }
 
 function FitCamera(){
- const {camera,size}=useThree();
+ const {camera,size,gl}=useThree(),[dockHeight,setDockHeight]=useState(200);
+ useEffect(()=>{
+  const dock=gl.domElement.closest('.game-shell')?.querySelector('.layout aside');if(!dock)return;
+  const update=()=>setDockHeight(Math.ceil(dock.getBoundingClientRect().height)+(parseFloat(getComputedStyle(dock).bottom)||0)+8);
+  update();const observer=new ResizeObserver(update);observer.observe(dock);return()=>observer.disconnect();
+ },[gl,size.width,size.height]);
  useEffect(()=>{
   if(!(camera instanceof OrthographicCamera))return;
-  const portrait=size.width<=760&&size.height>500;
-  const compact=size.height<=500;
+  const portrait=size.width<=760&&size.height>=size.width;
+  const compact=size.height<=500&&!portrait;
   const side=portrait?0:compact?250:334;
   const top=portrait?145:compact?70:110;
-  const bottom=portrait?200:80;
-  camera.zoom=Math.max(8,Math.min((size.width-side-28)/17.7,(size.height-top-bottom)/16.5));
+  const bottom=portrait?dockHeight:80;
+  camera.zoom=Math.max(portrait?3:8,Math.min((size.width-side-28)/17.7,(size.height-top-bottom)/16.5));
   camera.setViewOffset(size.width,size.height,side/2,(bottom-top)/2,size.width,size.height);
   camera.updateProjectionMatrix();
- },[camera,size.width,size.height]);
+ },[camera,size.width,size.height,dockHeight]);
  return null;
 }
 
@@ -102,5 +107,5 @@ export function Board({s:live,onMove,low,me,animation=null,throwAnimation=null,p
   {throwAnimation&&<ThrowSticks animation={throwAnimation}/>}
   {previews.map((p,i)=>{const [x,z]=position(p.destination);return <mesh key={p.id} position={[x,.25,z]} rotation={[-Math.PI/2,0,0]}><ringGeometry args={[.6,.82,32]}/><meshBasicMaterial color={i===0?'#f5d270':'#66bfff'} toneMapped={false}/></mesh>})}
   <OrbitControls makeDefault enablePan={false} minZoom={10} maxZoom={90} minPolarAngle={.1} maxPolarAngle={Math.PI/2.8} target={[0,0,0]}/>
- </Canvas><div className="token-overlay" aria-hidden="true">{tokens.map(token=><div key={token.key} ref={el=>{if(el)elements.set(token.key,el);else elements.delete(token.key)}} data-character={character(token.characterId).id} className={`token-label ${token.selectable?'selectable':''}`} style={{borderColor:token.color}}><i style={{background:token.color}}/><span className="label-name">{token.label}</span>{token.stack>1&&<strong className="stack-count">×{token.stack}</strong>}{token.selectable&&<em>선택</em>}</div>)}</div></div>;
+ </Canvas><div className="token-overlay" aria-hidden="true">{tokens.map(token=><div key={token.key} ref={el=>{if(el)elements.set(token.key,el);else elements.delete(token.key)}} data-character={character(token.characterId).id} className={`token-label ${token.selectable?'selectable':''}`} style={{borderColor:token.color}}><i style={{background:token.color}}/><span className="label-caption"><span className="label-name">{token.label.slice(0,token.label.lastIndexOf(' · '))}</span><span className="label-index"><span className="label-separator"> · </span>{token.index+1}</span></span>{token.stack>1&&<strong className="stack-count">×{token.stack}</strong>}{token.selectable&&<em>선택</em>}</div>)}</div></div>;
 }
