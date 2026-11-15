@@ -21,7 +21,8 @@
     "test:rules-browser": "node scripts/rules-browser-smoke.cjs",
     "test:characters-browser": "node scripts/characters-browser-smoke.cjs",
     "test:accounts-browser": "node scripts/accounts-browser-smoke.cjs",
-    "test:rooms-browser": "node scripts/rooms-browser-smoke.cjs"
+    "test:rooms-browser": "node scripts/rooms-browser-smoke.cjs",
+    "test:online-layout": "node scripts/online-layout-smoke.cjs"
   },
   "devDependencies": {
     "playwright": "^1.65.0",
