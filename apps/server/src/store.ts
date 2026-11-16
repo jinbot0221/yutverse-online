@@ -10,6 +10,7 @@ export class Store {
  readonly db:DatabaseSync;
  constructor(path:string){
   this.db=new DatabaseSync(path);this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
+   CREATE TABLE IF NOT EXISTS issue_reports(id TEXT PRIMARY KEY,created_at TEXT NOT NULL,user_id TEXT REFERENCES users(id),category TEXT NOT NULL,title TEXT NOT NULL,description TEXT NOT NULL,steps TEXT NOT NULL,expected TEXT NOT NULL,nickname TEXT NOT NULL,contact TEXT NOT NULL,diagnostics TEXT,screenshot_mime TEXT,screenshot BLOB);
    CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,name TEXT NOT NULL,token_hash TEXT UNIQUE NOT NULL);
    CREATE TABLE IF NOT EXISTS rooms(code TEXT PRIMARY KEY,data TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS matches(id TEXT PRIMARY KEY,finished_at TEXT NOT NULL,state TEXT NOT NULL);

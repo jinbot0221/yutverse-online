@@ -1,0 +1,24 @@
+import express from 'express';
+import {randomUUID} from 'node:crypto';
+import type {Store} from './store.ts';
+export const REPORT_IMAGE_LIMIT=1024*1024;
+function text(value:unknown,max:number,required=0){if(value===undefined&&!required)return '';if(typeof value!=='string'||value.trim().length<required||value.trim().length>max)throw Error('입력 길이와 형식을 확인해주세요.');return value.trim();}
+function diagnostics(value:unknown){if(value===undefined||value===null)return null;if(typeof value!=='object'||Array.isArray(value))throw Error('진단 정보 형식이 잘못되었습니다.');const input=value as Record<string,unknown>,out:Record<string,string|number>={};
+ for(const key of ['viewportWidth','viewportHeight','screenWidth','screenHeight','round'])if(input[key]!==undefined){const n=input[key];if(typeof n!=='number'||!Number.isInteger(n)||n<1||n>1000000)throw Error('화면 크기 또는 라운드 정보가 잘못되었습니다.');out[key]=n;}
+ if(input.pixelRatio!==undefined){if(typeof input.pixelRatio!=='number'||!Number.isFinite(input.pixelRatio)||input.pixelRatio<.1||input.pixelRatio>10)throw Error('화면 배율 정보가 잘못되었습니다.');out.pixelRatio=input.pixelRatio;}
+ for(const [key,max] of [['userAgent',400],['language',32],['timezone',64]] as const)if(input[key]!==undefined)out[key]=text(input[key],max);
+ for(const [key,allowed] of [['gameMode',['single','online','unknown']],['gameStyle',['normal','augment','unknown']]] as const)if(input[key]!==undefined){if(!allowed.some(value=>value===input[key]))throw Error('게임 모드 정보가 잘못되었습니다.');out[key]=input[key] as string;}
+ if(input.page!==undefined){const page=text(input.page,128).split(/[?#]/)[0];if(!/^\/[a-zA-Z0-9/_-]*$/.test(page))throw Error('페이지 정보가 잘못되었습니다.');out.page=page;}
+ if(input.roomCode!==undefined){const code=text(input.roomCode,6);if(!/^[A-Z2-9]{6}$/.test(code))throw Error('방 코드 형식이 잘못되었습니다.');out.roomCode=code;}
+ return out;
+}
+function screenshot(value:unknown):{mime:string;bytes:Buffer}|null{if(value===undefined||value===null||value==='')return null;if(typeof value!=='string'||value.length>Math.ceil(REPORT_IMAGE_LIMIT/3)*4+64)throw Error('스크린샷은 1MB 이하만 첨부할 수 있습니다.');const match=/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/]+={0,2})$/.exec(value);if(!match||match[2].length%4!==0)throw Error('PNG, JPG, WebP 이미지 파일만 첨부해주세요.');const bytes=Buffer.from(match[2],'base64');if(!bytes.length||bytes.length>REPORT_IMAGE_LIMIT||bytes.toString('base64')!==match[2])throw Error('스크린샷 형식 또는 크기가 잘못되었습니다.');const mime=match[1],valid=mime==='image/png'?bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])):mime==='image/jpeg'?bytes[0]===255&&bytes[1]===216&&bytes[2]===255:bytes.subarray(0,4).toString()==='RIFF'&&bytes.subarray(8,12).toString()==='WEBP';if(!valid)throw Error('이미지 파일 형식이 일치하지 않습니다.');return {mime,bytes};}
+export function mountReports(app:express.Express,store:Store,limit:(key:string,max:number,window?:number)=>boolean,now:()=>number){
+ const json=express.json({limit:'1500kb'});
+ app.post('/api/reports',(req,res,next)=>json(req,res,error=>{if(error)return void res.status((error as {status?:number}).status===413?413:400).json({error:'제보 용량이 너무 크거나 JSON 형식이 잘못되었습니다. 스크린샷은 1MB 이하로 첨부해주세요.'});next();}),(req,res)=>{
+  res.setHeader('Cache-Control','no-store');const authorization=req.headers.authorization,token=authorization?.replace(/^Bearer /,''),user=store.user(token);if(authorization&&!user)return void res.status(401).json({error:'로그인이 만료되었습니다. 다시 로그인하거나 로그인 없이 제보해주세요.'});
+  if(!limit(`report:${req.socket.remoteAddress}:${user?.id||'guest'}`,10,600000))return void res.status(429).json({error:'제보가 많이 접수되었습니다. 잠시 후 다시 보내주세요.'});
+  let report;try{const body=req.body;if(!body||typeof body!=='object'||Array.isArray(body)||!['bug','layout','other'].includes(body.category))throw Error('제보 유형을 선택해주세요.');report={category:body.category as string,title:text(body.title,100,3),description:text(body.description,4000,10),steps:text(body.steps,2000),expected:text(body.expected,1000),nickname:text(body.nickname,16),contact:text(body.contact,120),diagnostics:diagnostics(body.diagnostics),image:screenshot(body.screenshot)};}catch(error){return void res.status(400).json({error:error instanceof Error?error.message:'제보 형식을 확인해주세요.'});}
+  const id=randomUUID(),createdAt=new Date(now()).toISOString();try{store.db.prepare('INSERT INTO issue_reports(id,created_at,user_id,category,title,description,steps,expected,nickname,contact,diagnostics,screenshot_mime,screenshot) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').run(id,createdAt,user?.id??null,report.category,report.title,report.description,report.steps,report.expected,report.nickname,report.contact,report.diagnostics?JSON.stringify(report.diagnostics):null,report.image?.mime??null,report.image?.bytes??null);res.status(201).json({id,createdAt});}catch{res.status(500).json({error:'제보를 저장하지 못했습니다. 작성 내용을 유지한 채 다시 시도해주세요.'});}
+ });
+}

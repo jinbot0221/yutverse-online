@@ -75,6 +75,24 @@ caffeinate -i npm run deploy:quick
 
 기본 DB는 `data/yutverse.sqlite`이며 `YUTVERSE_DATA_DIR`로 변경할 수 있습니다. `PORT` 기본 3001, 별도 웹 출처가 필요하면 `WEB_ORIGIN`을 지정합니다. 서버 프로세스는 1개만 실행합니다. 기존 DB를 삭제하지 않고 새 테이블을 추가합니다. 반복된 동일 증강 선택도 `augment_choice_events`에 선택 순서별로 저장합니다. SQLite 백업은 일관된 백업 방법으로 수행하고 운영 중 DB를 임의 삭제하지 않습니다.
 
+## 증강 도감과 문제 제보
+
+`/augments`는 로그인 없이 직접 열 수 있는 별도 증강 도감입니다. 92종과 일반 모드 기본 3종을 모드·등장 시점·이름·효과로 찾습니다. 기존 빠른 보기 팝업도 유지합니다.
+
+`/report`는 게임 동작·화면 깨짐·기타 의견 제보 페이지입니다. 로그인 화면, 시작 화면, 말 선택 화면, 대기실과 경기 중 설정에 링크가 있으며 게임에서 열면 새 탭을 사용합니다. 이 페이지들은 게임 소켓을 연결하거나 게임 진행을 멈추지 않습니다. 원래 경기의 턴·선택 제한시간은 계속 흐릅니다.
+
+제목·문제 설명은 필수이며 재현 방법·기대 동작·닉네임·연락처와 PNG/JPG/WebP 스크린샷(최대 1MB)은 선택입니다. 화면 크기·브라우저·모드·라운드·방 코드 진단 정보는 미리 보고 제외할 수 있습니다. 비밀번호·세션 토큰·전체 게임 상태·주소의 임의 쿼리 값은 자동 수집하지 않습니다. 기본 웹 양식은 로그인 없이 제출하며 별도 계정 정보를 붙이지 않습니다.
+
+제보는 서버 SQLite의 `issue_reports`에 이미지와 함께 저장합니다. 성공한 저장에만 접수 번호를 표시하며 서버 연결 실패 시 화면의 작성 내용을 유지합니다. 공개 제보 조회 API 및 이메일/Slack 자동 알림은 제공하지 않습니다. 운영하는 Mac에서 다음 명령으로 확인합니다. 같은 `YUTVERSE_DATA_DIR`을 사용하세요.
+
+```sh
+npm run reports:list
+npm run reports:show -- 접수번호
+npm run reports:export -- 접수번호 ./report-export
+```
+
+목록은 최신 100건, 상세는 제보 본문과 진단 정보입니다. 내보내기는 JSON 및 첨부 이미지를 지정 폴더에 저장하며 기존 파일을 덮어쓰지 않습니다. 다른 사람의 제보를 브라우저에 공개하지 않습니다. 기존 DB는 삭제하지 않고 서버 재시작 시 테이블을 추가합니다.
+
 ## 검증
 
 브라우저 검사는 Playwright와 `/usr/bin/chromium`을 사용하며 `CHROMIUM_PATH`, `YUTVERSE_URL`을 지정할 수 있습니다. 테스트용 계정·전적을 생성하므로 **테스트 전용 DB**를 사용합니다. 스크린샷은 `/tmp/yutverse-browser`에 저장합니다.
@@ -82,6 +100,7 @@ caffeinate -i npm run deploy:quick
 ```sh
 npm test
 npm run build
+npm run test:pages-browser        # 독립 도감·제보 첨부/실패 복구·게임 탭 유지
 npm run test:catalog-browser      # 92종 검색/시점 필터, 리롤 유지, 효과·대상 선택
 npm run test:game-style           # 일반/증강 싱글·방 목록·재접속
 npm run test:family-browser       # 시작 화면, 동물, 3증강, 이펙트, 다른 사람 선택 중 윷판 유지

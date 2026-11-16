@@ -1,4 +1,5 @@
 import express from 'express';
+import {mountReports} from './reports.ts';
 import {createServer} from 'node:http';
 import {Server} from 'socket.io';
 import {randomInt,randomUUID,randomBytes,scrypt,timingSafeEqual} from 'node:crypto';
@@ -17,6 +18,7 @@ export function createGameServer(options:Options){
  const io=new Server(http,{maxHttpBufferSize:8192,allowRequest:(req,callback)=>{const origin=req.headers.origin;callback(null,!origin||origin===options.webOrigin||origin===`http://${req.headers.host}`||origin===`https://${req.headers.host}`);}});
  const rooms=new Map<string,Room>(),sessions=new Map<string,string>(),limits=new Map<string,{count:number;until:number}>();
  const limit=(key:string,max:number,window=10000)=>{const t=now();let l=limits.get(key);if(!l||l.until<=t){l={count:0,until:t+window};limits.set(key,l);}return ++l.count<=max;};
+ mountReports(app,store,limit,now);
  app.use(express.json({limit:'2kb'}));
  app.get('/api/health',(_req,res)=>res.json({ok:true}));
  const bearer=(req:express.Request)=>req.headers.authorization?.replace(/^Bearer /,'');
