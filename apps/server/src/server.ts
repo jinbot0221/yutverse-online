@@ -5,11 +5,11 @@ import {randomInt,randomUUID,randomBytes,scrypt,timingSafeEqual} from 'node:cryp
 import {promisify} from 'node:util';
 const digestPassword=promisify(scrypt);
 import {resolve} from 'node:path';
-import {createGame,throwYut,move,legalRoutes,selectResult,selectAugment,useAugment,skipMove,expireSelection,forfeit,DEFAULT_CHARACTER,isCharacterId,type CharacterId,type State} from '@yutverse/engine';
+import {createGame,throwYut,move,legalRoutes,selectResult,selectAugment,useAugment,skipMove,expireSelection,forfeit,DEFAULT_CHARACTER,isCharacterId,type CharacterId,type State,type GameStyle} from '@yutverse/engine';
 import {Store} from './store.ts';
 export type Member={id:string;name:string;ready:boolean;connected:boolean;disconnectedAt:number|null;departed?:boolean;character?:CharacterId};
-export type Room={code:string;matchId:string;capacity:2|3|4;owner:string;members:Member[];state:State|null;revision:number;actionDeadline:number|null;createdAt:number;title?:string;passwordSalt?:string;passwordHash?:string};
-export type RoomListEntry={code:string;title:string;capacity:2|3|4;count:number;ownerName:string;locked:boolean;status:'waiting'|'full'|'playing'};
+export type Room={code:string;matchId:string;capacity:2|3|4;gameStyle?:GameStyle;owner:string;members:Member[];state:State|null;revision:number;actionDeadline:number|null;createdAt:number;title?:string;passwordSalt?:string;passwordHash?:string};
+export type RoomListEntry={code:string;title:string;capacity:2|3|4;gameStyle?:GameStyle;count:number;ownerName:string;locked:boolean;status:'waiting'|'full'|'playing'};
 type Options={dbPath:string;random?:()=>number;now?:()=>number;graceMs?:number;turnMs?:number;staticDir?:string;webOrigin?:string};
 export function createGameServer(options:Options){
  const store=new Store(options.dbPath),app=express(),http=createServer(app);
@@ -72,7 +72,7 @@ export function createGameServer(options:Options){
   const {passwordHash,passwordSalt,...visible}=room;
   return {...visible,title:room.title||`${room.members.find(m=>m.id===room.owner)?.name||'여행자'}의 윷놀이`,locked:Boolean(passwordHash),state,members:room.members.map(({disconnectedAt,...m})=>m),me:room.members.findIndex(m=>m.id===userId)};
  };
- function directory():RoomListEntry[]{return [...rooms.values()].filter(r=>r.state?.phase!=='over').sort((a,b)=>Number(Boolean(a.state))-Number(Boolean(b.state))||b.createdAt-a.createdAt).map(r=>({code:r.code,title:r.title||`${r.members.find(m=>m.id===r.owner)?.name||'여행자'}의 윷놀이`,capacity:r.capacity,count:r.members.filter(m=>!m.departed).length,ownerName:r.members.find(m=>m.id===r.owner)?.name||'여행자',locked:Boolean(r.passwordHash),status:r.state?'playing':r.members.length>=r.capacity?'full':'waiting'}));}
+ function directory():RoomListEntry[]{return [...rooms.values()].filter(r=>r.state?.phase!=='over').sort((a,b)=>Number(Boolean(a.state))-Number(Boolean(b.state))||b.createdAt-a.createdAt).map(r=>({code:r.code,gameStyle:r.gameStyle??'normal',title:r.title||`${r.members.find(m=>m.id===r.owner)?.name||'여행자'}의 윷놀이`,capacity:r.capacity,count:r.members.filter(m=>!m.departed).length,ownerName:r.members.find(m=>m.id===r.owner)?.name||'여행자',locked:Boolean(r.passwordHash),status:r.state?'playing':r.members.length>=r.capacity?'full':'waiting'}));}
  let directorySnapshot='';function broadcastDirectory(){const list=directory(),snapshot=JSON.stringify(list);if(snapshot!==directorySnapshot){directorySnapshot=snapshot;io.emit('rooms',list);}}
  function publish(room:Room){room.revision++;store.saveRoom(room);for(const member of room.members){const sid=sessions.get(member.id);if(sid&&!member.departed)io.to(sid).emit('room',publicRoom(room,member.id));}broadcastDirectory();}
  function apply(room:Room,state:State){if(state===room.state)return false;room.state=state;room.actionDeadline=['over','augment'].includes(state.phase)?null:now()+turnMs;publish(room);return true;}
@@ -113,6 +113,7 @@ export function createGameServer(options:Options){
   handle('rooms',()=>({rooms:directory()}));
   handle('create',async data=>{
    if(data.character!==undefined&&!isCharacterId(data.character))throw Error('선택할 수 없는 캐릭터입니다.');
+   if(data.gameStyle!==undefined&&data.gameStyle!=='normal'&&data.gameStyle!=='augment')throw Error('지원하지 않는 게임 방식입니다.');
    if(data.capacity!==2&&data.capacity!==3&&data.capacity!==4)throw Error('2~4인 방만 지원합니다.');
    if(data.title!==undefined&&(typeof data.title!=='string'||data.title.trim().length>32))throw Error('방 제목은 32자 이내입니다.');
    if(data.password!==undefined&&(typeof data.password!=='string'||data.password.length>32))throw Error('방 비밀번호는 32자 이내입니다.');
@@ -124,7 +125,7 @@ export function createGameServer(options:Options){
    if(rooms.size>=200)throw Error('방이 가득 찼습니다.');
    for(const old of rooms.values())if(old.state?.phase==='over'){const member=old.members.find(m=>m.id===user.id);if(member)member.departed=true;}
    let code='';do{code=Array.from({length:6},()=> 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[randomInt(32)]).join('');}while(rooms.has(code));
-   const room:Room={code,title,passwordSalt:salt,passwordHash,matchId:randomUUID(),capacity:data.capacity,owner:user.id,members:[{...user,character:isCharacterId(data.character)?data.character:DEFAULT_CHARACTER,ready:false,connected:true,disconnectedAt:null}],state:null,revision:0,actionDeadline:null,createdAt:now()};rooms.set(code,room);publish(room);return {room:publicRoom(room,user.id)};
+   const room:Room={code,title,gameStyle:data.gameStyle??'normal',passwordSalt:salt,passwordHash,matchId:randomUUID(),capacity:data.capacity,owner:user.id,members:[{...user,character:isCharacterId(data.character)?data.character:DEFAULT_CHARACTER,ready:false,connected:true,disconnectedAt:null}],state:null,revision:0,actionDeadline:null,createdAt:now()};rooms.set(code,room);publish(room);return {room:publicRoom(room,user.id)};
   });
   handle('join',async data=>{
    if(data.character!==undefined&&!isCharacterId(data.character))throw Error('선택할 수 없는 캐릭터입니다.');
@@ -147,7 +148,7 @@ export function createGameServer(options:Options){
   handle('sync',()=>{const room=roomFor();return {room:publicRoom(room,user.id)};});
   handle('character',data=>{const room=roomFor();if(room.state)throw Error('경기 중에는 캐릭터를 바꿀 수 없습니다.');if(!isCharacterId(data.character))throw Error('선택할 수 없는 캐릭터입니다.');const member=room.members.find(m=>m.id===user.id)!;member.character=data.character;member.ready=false;publish(room);return {room:publicRoom(room,user.id)};});
   handle('ready',()=>{const room=roomFor();if(room.state)throw Error('이미 시작된 경기입니다.');const m=room.members.find(m=>m.id===user.id)!;m.ready=!m.ready;publish(room);});
-  handle('start',()=>{const room=roomFor();if(room.owner!==user.id||room.state||room.members.length!==room.capacity||room.members.some(m=>!m.ready||!m.connected))throw Error('방장만 모두 준비된 경기를 시작할 수 있습니다.');const s=createGame(room.capacity,true,random,now(),room.members.map(m=>m.character??DEFAULT_CHARACTER));s.players.forEach((p,i)=>p.name=room.members[i].name);apply(room,s);});
+  handle('start',()=>{const room=roomFor();if(room.owner!==user.id||room.state||room.members.length!==room.capacity||room.members.some(m=>!m.ready||!m.connected))throw Error('방장만 모두 준비된 경기를 시작할 수 있습니다.');const s=createGame(room.capacity,true,random,now(),room.members.map(m=>m.character??DEFAULT_CHARACTER),room.gameStyle);s.players.forEach((p,i)=>p.name=room.members[i].name);apply(room,s);});
   handle('act',data=>{
    const room=roomFor(),state=room.state,index=room.members.findIndex(m=>m.id===user.id);if(!state||state.phase==='over')throw Error('진행 중인 경기가 없습니다.');
    if(data.revision!==room.revision)throw Error('상태가 갱신되었습니다. 다시 시도하세요.');

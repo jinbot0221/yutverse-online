@@ -59,3 +59,5 @@ html,body,#root{min-height:100%;width:100%}body:has(.game-shell){overflow:hidden
 @media(max-width:760px) and (orientation:portrait){.selection-notice{top:151px;left:12px;right:12px;font-size:11px;padding:10px}.result-pop{left:50%;top:40%}.result-pop>span{font-size:13px}}
 @media(max-height:500px) and (orientation:landscape){.selection-notice{top:140px;left:12px;right:254px;font-size:11px}.result-pop{left:calc((100% - 250px)/2);top:50%}.mode-choices{grid-template-columns:1fr 1fr}.mode-menu>.eyebrow{margin-top:18px}.mode-animals{max-width:150px}}
 @media(prefers-reduced-motion:reduce){.result-pop{animation:none}.pop-ring{animation:none}.result-pop i{display:none}}
+
+.game-style-picker{min-width:0;padding:14px 16px;border:1px solid #7cbcaf55;border-radius:14px;background:#082f32;color:#e5f6ed}.game-style-picker label{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-weight:700}.game-style-picker p{font-size:13px;line-height:1.6;margin:8px 0 0;color:#b8d7cc;overflow-wrap:anywhere}.character-setup>.game-style-picker{margin:16px 0}.room-create .game-style-picker{grid-column:1/-1}.room-create .game-style-picker select{max-width:100%}

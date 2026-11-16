@@ -55,8 +55,8 @@ test('forfeit while selecting never leaves an eliminated player active; bottom r
  let s=createGame(4,true);s=forfeit(s,0);while(s.selection)s=selectAugment(s,s.selection.player,s.selection.offers[0]);assert.equal(s.turn,1);s=forfeit(s,2);s=forfeit(s,3);assert.equal(s.phase,'over');assert.deepEqual(s.ranks,[1,3,2,0]);
 });
 test('augmented two/three/four-player AI games complete with five slots and valid ranks',()=>{
- for(const count of [2,3,4] as const)for(let seed=1;seed<=12;seed++){
-  let v=seed;const rng=()=>{v=(v*1664525+1013904223)>>>0;return v/4294967296};let s=createGame(count,true,rng),actions=0;
+ for(const style of ['normal','augment'] as const)for(const count of [2,3,4] as const)for(let seed=1;seed<=12;seed++){
+  let v=seed;const rng=()=>{v=(v*1664525+1013904223)>>>0;return v/4294967296};let s=createGame(count,true,rng,Date.now(),[],style),actions=0;
   while(s.phase!=='over'&&actions++<10000){
    if(s.selection)s=selectAugment(s,s.selection.player,s.selection.offers[0],rng);
    else if(s.phase==='throw')s=throwYut(s,rng);

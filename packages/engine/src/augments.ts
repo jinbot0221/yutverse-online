@@ -1,9 +1,10 @@
+export type GameStyle = 'normal'|'augment';
 export type AugmentId = 'back-guard'|'do-plus'|'gae-plus'|'geol-plus'|'launch'|'late'|'stack'|'hunter'|'shield'|'return'|'finish'|'reroll'|'boost'|'leap'|'forward'|'steady'|'reserve'|'hero-wind'|'hero-guard'|'hero-phoenix'|'hero-finish'|'double-reserve'|'first-boost'|'steady-pocket'|'hero-pouch'|'do-echo'|'mo-echo';
 export type Augment = {id:AugmentId;name:string;description:string;hero:boolean;manual:boolean;charges:number;conflicts?:AugmentId[]};
 export type Slot = {id:AugmentId;remaining:number;usedTurn?:number};
 export const ACTIVE_AUGMENT_IDS:AugmentId[]=['shield','boost','back-guard'];
 export const AUGMENTS:Augment[] = [
- {id:'back-guard',name:'빽도 까방권',description:'빽도 1회를 자동으로 무효로 하고 다시 던집니다. 다시 고르면 사용 횟수가 1회 추가됩니다.',hero:false,manual:false,charges:1},
+ {id:'back-guard',name:'빽도 까방권',description:'빽도 1회를 자동으로 무효로 하고 다시 던집니다. 일반 모드에서 다시 고르면 사용 횟수가 1회 추가됩니다.',hero:false,manual:false,charges:1},
  {id:'do-plus',name:'작은 발걸음',description:'도가 나오면 이동 +1.',hero:false,manual:false,charges:-1},
  {id:'gae-plus',name:'두 걸음의 여유',description:'개가 나오면 이동 +1.',hero:false,manual:false,charges:-1},
  {id:'geol-plus',name:'걸음의 리듬',description:'걸이 나오면 이동 +1.',hero:false,manual:false,charges:-1},
@@ -11,11 +12,11 @@ export const AUGMENTS:Augment[] = [
  {id:'late',name:'마지막 질주',description:'마지막 모서리를 지난 뒤 바깥길에서 출발하면 1칸 더 갑니다.',hero:false,manual:false,charges:-1},
  {id:'stack',name:'함께 달리기',description:'함께 업힌 말을 움직이면 1칸 더 갑니다.',hero:false,manual:false,charges:-1},
  {id:'hunter',name:'추격자',description:'잡기에 성공하면 추가 던지기 +1. 내 차례마다 1회.',hero:false,manual:false,charges:-1},
- {id:'shield',name:'잡기 1회 까방권',description:'잡기 1회를 자동으로 막습니다. 다시 고르면 사용 횟수가 1회 추가됩니다.',hero:false,manual:false,charges:1,conflicts:['hero-guard']},
+ {id:'shield',name:'잡기 1회 까방권',description:'잡기 1회를 자동으로 막습니다. 일반 모드에서 다시 고르면 사용 횟수가 1회 추가됩니다.',hero:false,manual:false,charges:1,conflicts:['hero-guard']},
  {id:'return',name:'다시 출발',description:'잡히면 대기칸 대신 출발 후 첫 칸으로 돌아갑니다. 경기당 1회.',hero:false,manual:false,charges:1,conflicts:['hero-phoenix']},
  {id:'finish',name:'완주의 선물',description:'말을 완주시킬 때 추가 던지기 +1. 경기당 1회.',hero:false,manual:false,charges:1},
  {id:'reroll',name:'다시 한 번',description:'골라 둔 결과를 다시 던집니다. 이미 받은 추가 기회는 유지합니다. 경기당 1회.',hero:false,manual:true,charges:1},
- {id:'boost',name:'1칸 더 가기',description:'이동 전에 사용하면 앞으로 1칸 더 갑니다. 빽도에는 사용할 수 없습니다. 다시 고르면 사용 횟수 +1.',hero:false,manual:true,charges:1},
+ {id:'boost',name:'1칸 더 가기',description:'이동 전에 사용하면 앞으로 1칸 더 갑니다. 빽도에는 사용할 수 없습니다. 일반 모드에서 다시 고르면 사용 횟수 +1.',hero:false,manual:true,charges:1},
  {id:'leap',name:'도약',description:'앞으로 가는 도·개·걸·윷·모의 이동 거리를 2칸 늘립니다. 경기당 1회.',hero:false,manual:true,charges:1},
  {id:'forward',name:'뒤집힌 운명',description:'현재 빽도를 앞으로 한 칸으로 변경. 경기당 1회.',hero:false,manual:true,charges:1},
  {id:'steady',name:'안정된 걸음',description:'도·개·걸·윷·모 중 골라 둔 결과를 앞으로 2칸으로 바꿉니다. 경기당 1회.',hero:false,manual:true,charges:1},
@@ -34,9 +35,9 @@ export const AUGMENTS:Augment[] = [
 ];
 export function definition(id:string):Augment|undefined{return AUGMENTS.find(a=>a.id===id);}
 export function available(slots:Slot[],id:AugmentId){return slots.find(a=>a.id===id&&a.remaining!==0);}
-export function eligible(slots:Slot[],a:Augment){if(ACTIVE_AUGMENT_IDS.includes(a.id)&&slots.some(s=>s.id===a.id))return true;return slots.length<5&&!slots.some(s=>s.id===a.id||a.conflicts?.includes(s.id)||definition(s.id)?.conflicts?.includes(a.id))&&(!a.hero||!slots.some(s=>definition(s.id)?.hero));}
-export function candidates(slots:Slot[],random:()=>number):AugmentId[]{
- const pool=AUGMENTS.filter(a=>ACTIVE_AUGMENT_IDS.includes(a.id)&&eligible(slots,a));
+export function eligible(slots:Slot[],a:Augment,style:GameStyle='normal'){if(style==='normal'&&ACTIVE_AUGMENT_IDS.includes(a.id)&&slots.some(s=>s.id===a.id))return true;return slots.length<5&&!slots.some(s=>s.id===a.id||a.conflicts?.includes(s.id)||definition(s.id)?.conflicts?.includes(a.id))&&(!a.hero||!slots.some(s=>definition(s.id)?.hero));}
+export function candidates(slots:Slot[],random:()=>number,style:GameStyle='normal'):AugmentId[]{
+ const pool=AUGMENTS.filter(a=>(style==='augment'||ACTIVE_AUGMENT_IDS.includes(a.id))&&eligible(slots,a,style));
  for(let i=pool.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
  return pool.slice(0,3).map(a=>a.id);
 }

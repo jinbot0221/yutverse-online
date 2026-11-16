@@ -244,3 +244,17 @@ test('repeated basic-card choices persist as separate events without duplicating
  const f=await open();try{const {clients}=await setupRoom(f,2);await start(clients);await chooseInitial(clients);const room=[...f.server.rooms.values()][0];for(let i=0;i<5;i++){pace(f);room.state!.phase='augment';room.state!.selection={player:0,offers:['shield','boost','back-guard'],queue:[],deadline:f.clock.time+60000};assert.equal((await action(clients[0],'choose',{id:'shield'})).ok,true);}assert.equal(room.state!.players[0].slots.filter(s=>s.id==='shield').length,1);assert.equal(f.server.store.db.prepare('SELECT COUNT(*) AS n FROM augment_choice_events').get()!.n,7);
  }finally{await f.close()}
 });
+
+test('rooms persist the chosen game style and start server-authoritative mode-specific offers',async()=>{
+ for(const gameStyle of ['normal','augment'] as const){const f=await open();try{
+  const a=await f.connect((await f.session('방장')).token),b=await f.connect((await f.session('참가자')).token);
+  assert.equal((await request(a,'create',{capacity:2,gameStyle:'invalid'})).ok,false);
+  const made=await request(a,'create',{capacity:2,gameStyle});assert.equal(made.ok,true,made.error);assert.equal(made.room!.gameStyle,gameStyle);
+  assert.equal((await request(b,'join',{code:made.room!.code,gameStyle:gameStyle==='normal'?'augment':'normal'})).ok,true);
+  await start([a,b]);const room=await snapshot(a);assert.equal(room.state!.gameStyle,gameStyle);assert.equal(room.gameStyle,gameStyle);
+  const offers=room.state!.selection!.offers;assert.equal(offers.length,3);
+  if(gameStyle==='normal')assert.deepEqual([...offers].sort(),['back-guard','boost','shield']);
+  else assert.ok(offers.some(id=>!['back-guard','boost','shield'].includes(id)));
+  const saved=f.server.store.db.prepare('SELECT data FROM rooms WHERE code=?').get(made.room!.code) as {data:string};assert.equal(JSON.parse(saved.data).state.gameStyle,gameStyle);
+ }finally{await f.close();}}
+});

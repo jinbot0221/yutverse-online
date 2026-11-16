@@ -1,4 +1,4 @@
-import {available,candidates,definition,eligible,ACTIVE_AUGMENT_IDS,type Slot,type AugmentId} from './augments.ts';
+import {available,candidates,definition,eligible,ACTIVE_AUGMENT_IDS,type Slot,type AugmentId,type GameStyle} from './augments.ts';
 import {CHARACTERS,DEFAULT_CHARACTER,type CharacterId} from './characters.ts';
 export * from './characters.ts';
 export * from './augments.ts';
@@ -8,11 +8,11 @@ export type Player = { name: string; pieces: Piece[]; slots:Slot[]; baseTurns:nu
 export type Route='outer'|'diagonal'|'homeward'|'far';
 export type PlayerCount = 2|3|4;
 export type MoveEvent = {id:number;player:number;indices:number[];path:string[];captures:{player:number;indices:number[];from:string;to:string}[]};
-export type State = { players: Player[]; turn: number; phase: 'throw'|'move'|'augment'|'over'; result: Result|null; throws: number; ranks: number[]; log: string[]; turns: number; version:2; augmented:boolean; forfeited:number[]; selection:{player:number;offers:AugmentId[];deadline:number;queue:number[]}|null; choices:{player:number;id:AugmentId;turn:number;at:number}[]; lastMove?:MoveEvent; pendingResults?:Result[]; lastThrow?:{id:number;player:number;result:Result;guarded?:boolean} };
+export type State = { players: Player[]; turn: number; phase: 'throw'|'move'|'augment'|'over'; result: Result|null; throws: number; ranks: number[]; log: string[]; turns: number; version:2; augmented:boolean;gameStyle?:GameStyle; forfeited:number[]; selection:{player:number;offers:AugmentId[];deadline:number;queue:number[]}|null; choices:{player:number;id:AugmentId;turn:number;at:number}[]; lastMove?:MoveEvent; pendingResults?:Result[]; lastThrow?:{id:number;player:number;result:Result;guarded?:boolean} };
 export const HOME = 'home', DONE = 'done';
-export function createGame(count: PlayerCount = 3, augmented=false, random:()=>number=Math.random, now=Date.now(),characters:CharacterId[]=[]): State {
+export function createGame(count: PlayerCount = 3, augmented=false, random:()=>number=Math.random, now=Date.now(),characters:CharacterId[]=[],gameStyle:GameStyle='normal'): State {
  if(![2,3,4].includes(count))throw Error('Player count must be 2, 3 or 4.');
- const state:State={version:2,augmented,forfeited:[],pendingResults:[],selection:null,choices:[],players:Array.from({length:count},(_,i)=>({name:i===0?'나':`AI ${i}`,slots:[],baseTurns:i===0?1:0,pieces:Array.from({length:4},()=>({node:HOME,history:[]}))})),turn:0,phase:'throw',result:null,throws:1,ranks:[],log:['새 경기가 시작되었습니다.'],turns:1};
+ const state:State={version:2,augmented,gameStyle,forfeited:[],pendingResults:[],selection:null,choices:[],players:Array.from({length:count},(_,i)=>({name:i===0?'나':`AI ${i}`,slots:[],baseTurns:i===0?1:0,pieces:Array.from({length:4},()=>({node:HOME,history:[]}))})),turn:0,phase:'throw',result:null,throws:1,ranks:[],log:['새 경기가 시작되었습니다.'],turns:1};
  state.players.forEach((p,i)=>p.character=characters[i]??(i===0?DEFAULT_CHARACTER:CHARACTERS[(i-1)%CHARACTERS.length].id));
  return augmented?offer(state,Array.from({length:count},(_,i)=>i),random,now):state;
 }
@@ -62,12 +62,12 @@ function finishMatch(s:State){
 function offer(s:State,queue:number[],random:()=>number,now:number):State {
  const [player,...rest]=queue;
  if(player===undefined){s.phase='throw';s.selection=null;return s;}
- const offers=candidates(s.players[player].slots,random);if(!offers.length)return offer(s,rest,random,now);
+ const offers=candidates(s.players[player].slots,random,s.gameStyle);if(!offers.length)return offer(s,rest,random,now);
  s.phase='augment';s.selection={player,queue:rest,offers,deadline:now+60000};return s;
 }
 export function selectAugment(state:State,player:number,id:string,random:()=>number=Math.random,now=Date.now()):State {
  const q=state.selection,def=definition(id);
- if(state.phase!=='augment'||!q||q.player!==player||!def||!q.offers.includes(def.id)||!eligible(state.players[player].slots,def))return state;
+ if(state.phase!=='augment'||!q||q.player!==player||!def||!q.offers.includes(def.id)||!eligible(state.players[player].slots,def,state.gameStyle))return state;
  const s=clone(state),existing=s.players[player].slots.find(slot=>slot.id===def.id);if(existing&&ACTIVE_AUGMENT_IDS.includes(def.id))existing.remaining++;else s.players[player].slots.push({id:def.id,remaining:def.charges});s.choices.push({player,id:def.id,turn:s.players[player].baseTurns,at:now});
  s.log=[`${s.players[player].name}: ${def.name} 획득`,...s.log].slice(0,12);
  return offer(s,q.queue.filter(i=>!eliminated(s,i)),random,now);
