@@ -31,7 +31,8 @@
     "reports:list": "node scripts/reports.mjs list",
     "reports:show": "node scripts/reports.mjs show",
     "reports:export": "node scripts/reports.mjs export",
-    "test:pages-browser": "node scripts/pages-browser-smoke.cjs"
+    "test:pages-browser": "node scripts/pages-browser-smoke.cjs",
+    "test:fold-browser": "node scripts/fold-browser-smoke.cjs"
   },
   "devDependencies": {
     "playwright": "^1.65.0",

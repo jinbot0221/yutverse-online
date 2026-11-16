@@ -26,3 +26,5 @@ test('finishing shrinks a token only after it traverses the final segment',()=>{
  const before=ready(1);before.players[0].pieces[0]={node:'o20',history:[]};const plan=createAnimation(before,move(before,0),0)!;
  const token={player:0,index:0,x:5,z:5};assert.equal(samplePose(token,plan,0).scale,1);assert.equal(samplePose(token,plan,plan.duration).scale,0);
 });
+
+test('a step across a folded hinge animates through the hinge and keeps its logical progress',()=>{const s=ready(1);s.special={fold:'horizontal'};s.players[0].pieces[0]={node:'o7',history:['home','o1','o2','o3','o4','o5','o6']};const after=move(s,0),plan=createAnimation(s,after,0)!;assert.equal(after.players[0].pieces[0].node,'o8');const token={player:0,index:0,x:-5,z:-1},mid=samplePose(token,plan,plan.travelMs/2),end=samplePose(token,plan,plan.travelMs);assert.ok(Math.abs(mid.x+5)<1e-9&&Math.abs(mid.z)<1e-9);assert.deepEqual([end.x,end.z],[-5,-1]);});

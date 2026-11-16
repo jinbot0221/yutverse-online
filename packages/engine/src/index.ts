@@ -1,3 +1,6 @@
+import {sameCell,cellKey} from './fold.ts';
+export * from './fold.ts';
+export * from './dilemma.ts';
 import {acquireCustom,startCustom,manualOptions,resolveCustom,customRoll,afterCustomThrow,customTurn,checkCustomWins,winSpecial,loseSpecial,killSpecial,own,special,nodes,hasCustomButton,nativeChoices,useNative,captureCustom,transformTarget,customLanding,type SpecialState} from './custom.ts';
 export {REQUESTED_AUGMENTS} from './requested-augments.ts';
 export {type Prompt,hasCustomButton,nativeChoices,nodes as BOARD_NODES} from './custom.ts';
@@ -52,8 +55,8 @@ export function destination(p:Piece,steps:number,route?:Route):Piece|null {
 export function legalMoves(s:State):number[]{
  if(s.special?.prompt||s.phase!=='move'||!s.result)return [];
  const seen=new Set<string>();return s.players[s.turn].pieces.flatMap((p,i)=>{
- if(!moveDestination(s,i)|| (p.node!==HOME&&seen.has(p.node)))return [];
- seen.add(p.node);return [i];
+ if(!moveDestination(s,i)|| (p.node!==HOME&&seen.has(cellKey(s,p.node))))return [];
+ seen.add(cellKey(s,p.node));return [i];
  });
 }
 function eliminated(s:State,i:number){return s.ranks.includes(i)||s.forfeited.includes(i);}
@@ -133,7 +136,7 @@ function moveSteps(s:State,index:number):number {
   if(available(slots,'geol-plus')&&s.result.name==='걸')bonus++;
   if(available(slots,'launch')&&p.node===HOME)bonus++;
   if(available(slots,'late')&&/^o(16|17|18|19)$/.test(p.node))bonus++;
-  if(available(slots,'stack')&&p.node!==HOME&&s.players[s.turn].pieces.filter(x=>x.node===p.node).length>1)bonus++;
+  if(available(slots,'stack')&&p.node!==HOME&&s.players[s.turn].pieces.filter(x=>sameCell(s,x.node,p.node)).length>1)bonus++;
   if(s.players[s.turn].pieces.some(t=>t.kind==='vanguard'&&nodes.includes(t.node)))bonus++;steps+=Math.min(2,bonus);
  }if(p.kind==='goblin')steps=1;if(own(s,s.turn,'moonwalk'))steps=-steps;if(s.players[s.turn].stats?.lastDance===s.players[s.turn].baseTurns)steps*=2;return steps;
 }
@@ -209,18 +212,19 @@ export function throwYut(state:State,random:()=>number=Math.random,now=Date.now(
 export function move(state:State,index:number,random:()=>number=Math.random,now=Date.now(),route?:Route):State {
  if(!legalMoves(state).includes(index)||!moveDestination(state,index,route))return state;
  const s=clone(state), player=s.players[s.turn], original=player.pieces[index], target=moveDestination(s,index,route)!;
- const group=player.pieces.map((p,i)=>({p,i})).filter(({p,i})=>i===index||(!own(s,s.turn,'cannibal')&&original.node!==HOME&&p.node===original.node));
+ const group=player.pieces.map((p,i)=>({p,i})).filter(({p,i})=>i===index||(!own(s,s.turn,'cannibal')&&original.node!==HOME&&sameCell(s,p.node,original.node)));
  const path=s.result!.steps<0?[original.node,target.node]:[original.node,...target.history.slice(original.history.length+1),target.node];
  s.lastMove={id:(state.lastMove?.id||0)+1,player:s.turn,indices:group.map(({i})=>i),path,captures:[]};
  for(const {i} of group)player.pieces[i]={...player.pieces[i],node:target.node,history:[...target.history]};
+ if(target.node!==HOME&&target.node!==DONE&&!own(s,s.turn,'cannibal'))for(const piece of player.pieces)if(sameCell(s,piece.node,target.node)){piece.node=target.node;piece.history=[...target.history];}
  let captured=false;
  if(target.node!==HOME&&target.node!==DONE)s.players.forEach((op,i)=>{
-  if(i===s.turn||eliminated(s,i)||!op.pieces.some(p=>p.node===target.node))return;
+  if(i===s.turn||eliminated(s,i)||!op.pieces.some(p=>sameCell(s,p.node,target.node)))return;
   if(trigger(s,i,'shield')||trigger(s,i,'hero-guard')){s.log.unshift(`${op.name}: 방패 발동`);return;}
   if(s.gameStyle==='augment'){if(captureCustom(s,s.turn,index,i,target.node)>0)captured=true;return;}
   const respawn=trigger(s,i,'hero-phoenix')?'o5':trigger(s,i,'return')?'o1':HOME;
-  s.lastMove!.captures.push({player:i,indices:op.pieces.flatMap((p,j)=>p.node===target.node?[j]:[]),from:target.node,to:respawn});
-  op.pieces=op.pieces.map(p=>p.node===target.node?{node:respawn,history:respawn===HOME?[]:[HOME]}:p);captured=true;
+  s.lastMove!.captures.push({player:i,indices:op.pieces.flatMap((p,j)=>sameCell(s,p.node,target.node)?[j]:[]),from:target.node,to:respawn});
+  op.pieces=op.pieces.map(p=>sameCell(s,p.node,target.node)?{node:respawn,history:respawn===HOME?[]:[HOME]}:p);captured=true;
  });
  if(captured){s.throws++;if(s.throws<4&&trigger(s,s.turn,'hunter',true))s.throws++;s.log.unshift('잡기! 한 번 더 던집니다.');}
  if(target.node===DONE){if(s.throws<4&&trigger(s,s.turn,'finish'))s.throws++;if(s.throws<4&&trigger(s,s.turn,'hero-finish',true))s.throws++;}

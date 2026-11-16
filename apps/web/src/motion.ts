@@ -1,4 +1,4 @@
-import {HOME,DONE,position,type State,type MoveEvent} from '@yutverse/engine';
+import {HOME,DONE,position,foldedPosition,foldedPath,BOARD_NODES,type State,type MoveEvent} from '@yutverse/engine';
 export type AnimationPlan={before:State;event:MoveEvent;start:number;travelMs:number;captureMs:number;duration:number;reduced:boolean};
 export type MotionToken={player:number;index:number;x:number;z:number};
 export type Pose={x:number;y:number;z:number;scale:number;turn:number;roll:number;kind:'idle'|'move'|'capture'|'finish'};
@@ -15,7 +15,7 @@ export function samplePose(token:MotionToken,plan:AnimationPlan|null,elapsed:num
  const base:Pose={x:token.x,y:.16,z:token.z,scale:1,turn:0,roll:0,kind:'idle'};if(!plan)return base;
  const {event,travelMs,captureMs,reduced}=plan;
  if(event.player===token.player&&event.indices.includes(token.index)){
-  const points=event.path.map((node,i)=>i===0?[token.x,token.z]:node===HOME?homePosition(token.player,token.index):position(node));
+  const points:[number,number][]=[[token.x,token.z]];for(let i=1;i<event.path.length;i++){const node=event.path[i],prior=event.path[i-1];if(plan.before.special?.fold&&BOARD_NODES.includes(prior)&&BOARD_NODES.includes(node))points.push(...foldedPath([prior,node],plan.before.special.fold).slice(1));else points.push(node===HOME?homePosition(token.player,token.index):foldedPosition(node,plan.before.special?.fold));}
   const progress=clamp(elapsed/travelMs)*(points.length-1),segment=Math.min(points.length-2,Math.floor(progress)),fraction=progress-segment;
   const a=points[Math.max(0,segment)],b=points[Math.max(1,segment+1)];
   const ended=elapsed>=travelMs,finishing=event.path.at(-1)===DONE&&ended;
@@ -23,7 +23,7 @@ export function samplePose(token:MotionToken,plan:AnimationPlan|null,elapsed:num
  }
  const captured=event.captures.find(c=>c.player===token.player&&c.indices.includes(token.index));
  if(captured&&elapsed>=travelMs){
-  const t=clamp((elapsed-travelMs)/captureMs),end=captured.to===HOME?homePosition(token.player,token.index):position(captured.to);
+  const t=clamp((elapsed-travelMs)/captureMs),end=captured.to===HOME?homePosition(token.player,token.index):foldedPosition(captured.to,plan.before.special?.fold);
   return {...base,x:token.x+(end[0]-token.x)*t,z:token.z+(end[1]-token.z)*t,y:.16+(reduced?0:Math.sin(t*Math.PI)*2),scale:reduced?1:1-Math.sin(t*Math.PI)*.35,turn:reduced?0:t*Math.PI*6,roll:reduced?0:Math.sin(t*Math.PI*6)*.25,kind:'capture'};
  }
  return base;

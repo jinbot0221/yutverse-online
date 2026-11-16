@@ -274,3 +274,11 @@ test('fog omits distant coordinates and shared winners receive equal permanent r
  room.state.special={placements:{0:1,1:1,2:3,3:4},wins:[[0,1]]};room.state.ranks=[0,1,2,3];room.state.phase='over';f.server.store.saveRoom(room);const rows=f.server.store.db.prepare('SELECT rank,points FROM participants ORDER BY rank').all();assert.deepEqual(rows.map(r=>[r.rank,r.points]),[[1,40],[1,40],[3,5],[4,0]]);
  }finally{await f.close()}
 });
+
+test('online folded boards retain the finish edge and permanently save the completed match',async()=>{
+ for(const fold of ['horizontal','vertical'] as const){const f=await open();try{const {clients}=await setupRoom(f,2);await start(clients);const room=[...f.server.rooms.values()][0];room.gameStyle='augment';room.state=createGame(2,false,()=>.5,f.clock.time,[],'augment');room.state.phase='augment';room.state.selection={player:0,offers:['custom-fold'],queue:[],deadline:f.clock.time+60000};room.state.players[0].pieces[0]={node:'o19',history:['home',...Array.from({length:18},(_,i)=>`o${i+1}`)]};room.state.players[0].pieces.slice(1).forEach(p=>p.node='done');
+ assert.equal((await action(clients[0],'choose',{id:'custom-fold'})).ok,true);assert.equal((await action(clients[1],'resolve-ability',{value:fold})).ok,false);assert.equal((await action(clients[0],'resolve-ability',{value:fold})).ok,true);assert.equal((await snapshot(clients[1])).state!.special!.fold,fold);assert.equal(room.state.players[0].pieces[0].node,'o19');
+ for(const expected of ['o20','done']){room.state.phase='move';room.state.turn=0;room.state.throws=0;room.state.result={name:'도',steps:1,extra:false};room.state.pendingResults=[];pace(f);assert.equal((await action(clients[0],'move',{index:0})).ok,true);assert.equal(room.state.players[0].pieces[0].node,expected);}
+ assert.equal(room.state.phase,'over');assert.deepEqual(room.state.ranks,[0,1]);assert.equal(f.server.store.db.prepare('SELECT COUNT(*) AS n FROM matches').get()!.n,1);
+ }finally{await f.close();}}
+});

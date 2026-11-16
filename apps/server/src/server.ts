@@ -6,7 +6,7 @@ import {randomInt,randomUUID,randomBytes,scrypt,timingSafeEqual} from 'node:cryp
 import {promisify} from 'node:util';
 const digestPassword=promisify(scrypt);
 import {resolve} from 'node:path';
-import {createGame,throwYut,move,legalRoutes,selectResult,selectAugment,rerollAugments,resolveAbility,expireAbility,activateNative,useAugment,skipMove,expireSelection,forfeit,DEFAULT_CHARACTER,isCharacterId,type CharacterId,type State,type GameStyle,position} from '@yutverse/engine';
+import {createGame,throwYut,move,legalRoutes,selectResult,selectAugment,rerollAugments,resolveAbility,expireAbility,activateNative,useAugment,skipMove,expireSelection,forfeit,DEFAULT_CHARACTER,isCharacterId,type CharacterId,type State,type GameStyle,position,foldedPosition} from '@yutverse/engine';
 import {Store} from './store.ts';
 export type Member={id:string;name:string;ready:boolean;connected:boolean;disconnectedAt:number|null;departed?:boolean;character?:CharacterId};
 export type Room={code:string;matchId:string;capacity:2|3|4;gameStyle?:GameStyle;owner:string;members:Member[];state:State|null;revision:number;actionDeadline:number|null;createdAt:number;title?:string;passwordSalt?:string;passwordHash?:string};
@@ -72,7 +72,7 @@ export function createGameServer(options:Options){
   const state=room.state?structuredClone(room.state):null;
   if(state?.selection&&room.members[state.selection.player].id!==userId)state.selection.offers=[];
   const viewer=room.members.findIndex(m=>m.id===userId),prompt=state?.special?.prompt;if(prompt){if(prompt.id==='custom-bluff-resolve'&&viewer!==prompt.owner){delete prompt.data;if(state?.lastThrow)state.lastThrow.result={name:'비공개',steps:0,extra:false};if(state){state.pendingResults=[];state.throws=0;}}if(prompt.answers){prompt.answers=Object.hasOwn(prompt.answers,viewer)?{[viewer]:prompt.answers[viewer]}:{};}}
-  if(state?.special?.fogUntil&&state.turns<state.special.fogUntil&&viewer!==state.special.fogOwner){const ownNodes=state.players[viewer].pieces.map(p=>p.node);for(let j=0;j<state.players.length;j++)if(j!==viewer)for(const piece of state.players[j].pieces)if(piece.node!=='home'&&piece.node!=='done'&&!ownNodes.some(node=>{const a=position(node),b=position(piece.node);return Math.hypot(a[0]-b[0],a[1]-b[1])<=2.5})){piece.node='hidden';piece.history=[];}}
+  if(state?.special?.fogUntil&&state.turns<state.special.fogUntil&&viewer!==state.special.fogOwner){const ownNodes=state.players[viewer].pieces.map(p=>p.node);for(let j=0;j<state.players.length;j++)if(j!==viewer)for(const piece of state.players[j].pieces)if(piece.node!=='home'&&piece.node!=='done'&&!ownNodes.some(node=>{const a=foldedPosition(node,state!.special?.fold),b=foldedPosition(piece.node,state!.special?.fold);return Math.hypot(a[0]-b[0],a[1]-b[1])<=2.5})){piece.node='hidden';piece.history=[];}}
   if(state)state.players.forEach((p,j)=>{if(j!==viewer&&p.stats)p.stats=Object.fromEntries(Object.entries(p.stats).filter(([key])=>['hp','ritual','coins','kills','monsterGoal'].includes(key)));});
   const {passwordHash,passwordSalt,...visible}=room;
   return {...visible,title:room.title||`${room.members.find(m=>m.id===room.owner)?.name||'여행자'}의 윷놀이`,locked:Boolean(passwordHash),state,members:room.members.map(({disconnectedAt,...m})=>m),me:room.members.findIndex(m=>m.id===userId)};
