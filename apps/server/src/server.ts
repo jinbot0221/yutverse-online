@@ -168,7 +168,7 @@ export function createGameServer(options:Options){
     if(data.kind==='throw')next=throwYut(state,random,now());
     if(data.kind==='select-result'&&Number.isInteger(data.id))next=selectResult(state,data.id as number);
     if(data.kind==='move'&&Number.isInteger(data.index)){const routes=legalRoutes(state,data.index as number);const route=routes.find(r=>r.id===data.route)?.id;if((!routes.length&&data.route===undefined)||(routes.length&&route))next=move(state,data.index as number,random,now(),route);}
-    if(data.kind==='use'&&typeof data.id==='string')next=useAugment(state,index,data.id,random,now());
+    if(data.kind==='use'&&typeof data.id==='string'&&(data.slotIndex===undefined||Number.isInteger(data.slotIndex)))next=useAugment(state,index,data.id,random,now(),data.slotIndex as number|undefined);
     if(data.kind==='skip')next=skipMove(state,random,now());
    }
    if(!apply(room,next))throw Error('현재 사용할 수 없는 행동입니다.');

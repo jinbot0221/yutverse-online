@@ -240,8 +240,8 @@ test('legacy accounts can issue a recovery code only with their current password
   const times=f.server.store.db.prepare('SELECT expires_at FROM auth_sessions').all().map(r=>Number(r.expires_at)-Date.now());assert.ok(times.some(t=>t>11*3600000&&t<=12*3600000));assert.ok(times.some(t=>t>29*86400000&&t<=30*86400000));
  }finally{await f.close()}
 });
-test('duplicate basic-card selection is rejected without charging or recording an event',async()=>{
- const f=await open();try{const {clients}=await setupRoom(f,2);await start(clients);await chooseInitial(clients);const room=[...f.server.rooms.values()][0],owned=room.state!.players[0].slots[0].id;pace(f);room.state!.phase='augment';room.state!.selection={player:0,offers:[owned],queue:[],deadline:f.clock.time+60000};assert.equal((await action(clients[0],'choose',{id:owned})).ok,false);assert.equal(f.server.store.db.prepare('SELECT COUNT(*) AS n FROM augment_choice_events').get()!.n,2);
+test('duplicate ordinary cards remain independent and all repeated selections persist',async()=>{
+ const f=await open();try{const {clients}=await setupRoom(f,2);await start(clients);await chooseInitial(clients);const room=[...f.server.rooms.values()][0],owned=room.state!.players[0].slots[0].id;room.state!.players[0].slots[0].remaining=0;for(const round of [6,12]){pace(f);room.state!.round=round;room.state!.phase='augment';room.state!.selection={player:0,offers:['shield','boost','back-guard'],queue:[],deadline:f.clock.time+60000};assert.equal((await action(clients[0],'choose',{id:owned})).ok,true);}assert.deepEqual(room.state!.players[0].slots.map(a=>a.remaining),[0,1,1]);assert.equal(f.server.store.db.prepare('SELECT COUNT(*) AS n FROM augment_choice_events').get()!.n,4);const saved=JSON.parse((f.server.store.db.prepare('SELECT data FROM rooms WHERE code=?').get(room.code) as {data:string}).data);assert.deepEqual(saved.state.players[0].slots.map((a:{remaining:number})=>a.remaining),[0,1,1]);
  }finally{await f.close()}
 });
 test('server authorizes candidate rerolls and persists the spent reroll across sync',async()=>{
@@ -282,3 +282,5 @@ test('online folded boards retain the finish edge and permanently save the compl
  assert.equal(room.state.phase,'over');assert.deepEqual(room.state.ranks,[0,1]);assert.equal(f.server.store.db.prepare('SELECT COUNT(*) AS n FROM matches').get()!.n,1);
  }finally{await f.close();}}
 });
+
+test('online manual-card index validation prevents spending another or already spent slot',async()=>{const f=await open();try{const {clients}=await setupRoom(f,2);await start(clients);const room=[...f.server.rooms.values()][0];room.state=createGame(2);room.state.phase='move';room.state.throws=0;room.state.result={name:'도',steps:1,extra:false};room.state.players[0].slots=[{id:'boost',remaining:0},{id:'boost',remaining:1},{id:'boost',remaining:1}];assert.equal((await action(clients[0],'use',{id:'boost',slotIndex:0})).ok,false);assert.equal((await action(clients[1],'use',{id:'boost',slotIndex:1})).ok,false);assert.equal((await action(clients[0],'use',{id:'boost',slotIndex:2})).ok,true);assert.deepEqual(room.state.players[0].slots.map(a=>a.remaining),[0,1,0]);assert.equal((await action(clients[0],'use',{id:'boost',slotIndex:-1})).ok,false);assert.equal((await action(clients[0],'use',{id:'shield',slotIndex:1})).ok,false);}finally{await f.close()}});

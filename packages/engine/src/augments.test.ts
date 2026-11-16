@@ -6,7 +6,7 @@ function capture(id?:AugmentId){const s=state();s.players[0].pieces[0]={node:'o1
 test('three current cards remain distinct, non-rechargeable and respect legacy slot limits',()=>{
  assert.equal(AUGMENTS.length,27+REQUESTED_AUGMENTS.length);assert.equal(new Set(AUGMENTS.map(a=>a.id)).size,27+REQUESTED_AUGMENTS.length);
  const slots=[{id:'hero-wind' as const,remaining:-1},{id:'shield' as const,remaining:0}];
- for(let i=0;i<30;i++){const offers=candidates(slots,Math.random);assert.equal(offers.length,2);assert.deepEqual([...offers].sort(),['back-guard','boost']);}
+ for(let i=0;i<30;i++){const offers=candidates(slots,Math.random);assert.equal(offers.length,3);assert.deepEqual([...offers].sort(),['back-guard','boost','shield']);}
  assert.deepEqual(candidates(['do-plus','gae-plus','geol-plus','launch','late'].map(id=>({id:id as AugmentId,remaining:0})),Math.random),[]);
 });
 test('selection freezes the whole game and timeout selects only at 60 seconds',()=>{
@@ -19,7 +19,7 @@ test('rounds 1,6,12 offer all active players once; extra throws do not advance r
  let s=createGame(count,true,()=>.3,0,[],style);while(s.selection)s=selectAugment(s,s.selection.player,s.selection.offers[0],()=>.3,0);
  assert.equal(s.round,1);s.phase='throw';s=throwYut(s,()=>.1);assert.equal(s.round,1);
  for(let round=2;round<=13;round++){s.turn=count-1;s.round=round-1;s.pendingResults=[];s.phase='move';s.selection=null;s.result={name:'도',steps:1,extra:false};s.throws=0;s.players[count-1].pieces=s.players[count-1].pieces.map(()=>({node:HOME,history:[]}));s=move(s,0,()=>.3,0);assert.equal(s.round,round);assert.equal(s.phase,[6,12].includes(round)?'augment':'throw');const actors=[];while(s.selection){actors.push(s.selection.player);s=selectAugment(s,s.selection.player,s.selection.offers[0],()=>.3,0);}if([6,12].includes(round))assert.deepEqual(actors,Array.from({length:count},(_,i)=>i));}
- for(const p of s.players){assert.equal(p.slots.length,3);assert.equal(new Set(p.slots.map(x=>x.id)).size,3);}
+ for(const p of s.players){assert.equal(p.slots.length,3);assert.equal(new Set(p.slots.map(x=>x.id)).size,style==='normal'?1:3);}
  }
 });
 test('all passive movement bonuses, stacking and +2 cap',()=>{

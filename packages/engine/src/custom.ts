@@ -36,7 +36,7 @@ export function killSpecial(s:State,attacker:number,victim:number,index:number):
 export function acquireCustom(s:State,i:number,id:string,rng:()=>number,now:number){
  if(!id.startsWith('custom-'))return;const key=id.slice(7),sp=special(s),p=s.players[i],st=stats(s,i);const def=REQUESTED_AUGMENTS.find(a=>a.id===id);if(def&&!def.manual&&def.charges>0)take(s,i,id);
  if(key==='cat-lover'&&s.players.some(p=>p.slots.some(a=>a.id==='custom-cat')))winSpecial(s,i);
- if(key==='no-friends')for(const k of Object.keys(st))if(k.startsWith('caught-'))delete st[k];
+ if(key==='no-friends'){for(const k of Object.keys(st))if(k.startsWith('caught-'))delete st[k];st.noFriendsMask=s.players.reduce((mask,_,j)=>j!==i&&active(s,j)?mask|(1<<j):mask,0);}
  if(key==='coup')st.coupKills=0;
  if(key==='cat'){for(let j=0;j<s.players.length;j++)if(own(s,j,'cat-lover'))winSpecial(s,j);}
  if(key==='chosen-cat')sp.catForced=true;
@@ -154,7 +154,7 @@ export function resolveCustom(s:State,actor:number,value:string,rng:()=>number,n
  else if(['holy-shield','bonfire','assassin','bomb','domain'].includes(key)){const group=s.players[owner].pieces.filter((p,j)=>j===index||sameCell(s,p.node,piece.node));for(const p of group){if(key==='holy-shield')p.shield=(p.shield||0)+1;if(key==='bonfire')p.revive=piece.node;if(key==='assassin')p.spirit=true;if(key==='bomb')p.bomb={round:(s.round||1)+6,owner:i};if(key==='domain'){p.kind='domain';p.domainEnd=s.players[i].baseTurns+2;}}take(s,i,id);}
  else if(key==='sacrifice'){piece.shield=0;killSpecial(s,i,i,index);for(const p of s.players[i].pieces)if(nodes.includes(p.node))p.shield=(p.shield||0)+1;take(s,i,id);}
  else if(key==='fusion'){s.players.forEach((op,j)=>op.pieces.forEach((p,k)=>{if(j!==owner||p.node!==piece.node)killSpecial(s,i,j,k)}));take(s,i,id);sp.endTurn=true;}
- else if(key==='time-travel'){ask(s,i,id,'戻る 칸을 고르세요',[...new Set(piece.history)].map(node=>({value:node,label:node==='home'?'대기칸':node})),now,'back',{piece:value});}
+ else if(key==='time-travel'){ask(s,i,id,'되돌아갈 칸을 고르세요',[...new Set(piece.history)].map(node=>({value:node,label:node==='home'?'대기칸':node})),now,'back',{piece:value});}
  else if(key==='truck'||key==='flick')ask(s,i,id,'직선 이동 방향을 고르세요',nodes.filter(n=>n!==piece.node&&ray(s,piece.node,n).length).map(node=>({value:node,label:`${node} 방향`})),now,'ray',{piece:value});
  }
  return true;
@@ -200,9 +200,9 @@ export function checkCustomWins(s:State){
  if(p.pieces.some(t=>['marathon','kim'].includes(t.kind||'')&&t.node==='done'))winSpecial(s,i);
  if(own(s,i,'connect-four')&&(board.some(t=>board.filter(x=>sameCell(s,x.node,t.node)).length>=4)||nodes.some(a=>nodes.some(b=>a!==b&&[a,...ray(s,a,b)].slice(0,4).length===4&&[a,...ray(s,a,b)].slice(0,4).every(n=>board.some(t=>t.node===n))))))winSpecial(s,i);
  if(own(s,i,'star')&&board.some(t=>board.filter(x=>sameCell(s,x.node,t.node)).reduce((n,x)=>n+(x.strength||1),0)>=8))winSpecial(s,i);
- if(own(s,i,'no-friends')&&s.players.every((_,j)=>j===i||st[`caught-${j}`]>0))winSpecial(s,i);
- if(own(s,i,'sole')){const groups=new Set(s.players.flatMap((op,j)=>op.pieces.filter(t=>nodes.includes(t.node)).map(t=>`${j}:${cellKey(s,t.node)}`)));if(groups.size===1&&board.length)winSpecial(s,i);}
- if(own(s,i,'zombie')){const all=s.players.flatMap(op=>op.pieces);if(all.filter(t=>t.kind==='zombie').length*2>=all.length)winSpecial(s,i);}
+ if(own(s,i,'no-friends')&&s.players.every((_,j)=>j===i||(st.noFriendsMask!==undefined&&!(st.noFriendsMask&(1<<j)))||st[`caught-${j}`]>0))winSpecial(s,i);
+ if(own(s,i,'sole')){const groups=new Set(s.players.flatMap((op,j)=>active(s,j)?op.pieces.filter(t=>nodes.includes(t.node)).map(t=>`${j}:${cellKey(s,t.node)}`):[]));if(groups.size===1&&board.length)winSpecial(s,i);}
+ if(p.slots.some(slot=>slot.id==='custom-zombie')){const all=s.players.flatMap(op=>op.pieces);if(all.filter(t=>t.kind==='zombie').length*2>=all.length)winSpecial(s,i);}
  if(p.pieces.every(t=>t.node==='done'))winSpecial(s,i);
  }
 }

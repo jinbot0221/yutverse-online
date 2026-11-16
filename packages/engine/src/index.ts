@@ -160,7 +160,8 @@ function saveResult(s:State,oldId:number|undefined){
  s.pendingResults=oldId!==undefined&&pending.some(r=>r.id===oldId)?pending.map(r=>r.id===oldId?s.result!:r):[...pending,s.result];
 }
 function addThrows(s:State,count:number){s.throws+=Math.max(0,Math.min(count,4-s.throws));}
-export function canUseAugment(s:State,player:number,id:string):boolean {
+export function canUseAugment(s:State,player:number,id:string,slotIndex?:number):boolean {
+ if(slotIndex!==undefined&&(!Number.isInteger(slotIndex)||slotIndex<0||s.players[player]?.slots[slotIndex]?.id!==id||s.players[player].slots[slotIndex].remaining===0))return false;
  const def=definition(id);if(id==='custom-mutual'&&s.turn===player&&!s.special?.prompt&&['throw','move'].includes(s.phase)&&s.players.some((_,j)=>j!==player&&own(s,j,'mutual'))&&s.players[player].stats?.mutualUsed!==s.players[player].baseTurns)return true;
  if(s.special?.prompt||!def||(!def.manual&&!hasCustomButton(id))||s.turn!==player||eliminated(s,player)||!available(s.players[player].slots,def.id))return false;
  if(id.startsWith('custom-'))return manualOptions(s,player,id);
@@ -171,11 +172,11 @@ export function canUseAugment(s:State,player:number,id:string):boolean {
  if(id==='boost'||id==='leap')return s.result.steps>0&&(s.result.bonus||0)<2;
  return id==='steady'&&s.result.steps>0&&s.result.steps!==2;
 }
-export function useAugment(state:State,player:number,id:string,random:()=>number=Math.random,now=Date.now()):State {
- if(!canUseAugment(state,player,id))return state;
+export function useAugment(state:State,player:number,id:string,random:()=>number=Math.random,now=Date.now(),slotIndex?:number):State {
+ if(!canUseAugment(state,player,id,slotIndex))return state;
  if(id.startsWith('custom-')){const s=clone(state);startCustom(s,player,id,random,now);return finishCustomAction(s,random,now);}
  const oldId=state.result?.id;
- const s=clone(state),slot=s.players[player].slots.find(a=>a.id===id)!;slot.remaining--;
+ const s=clone(state),slot=slotIndex===undefined?available(s.players[player].slots,id as AugmentId)!:s.players[player].slots[slotIndex];slot.remaining--;
  if(['reserve','double-reserve','hero-pouch'].includes(id))addThrows(s,id==='reserve'?1:id==='double-reserve'?2:3);
  else if(id==='reroll'){if(s.result!.extra&&!s.result!.extraSettled)s.throws=Math.max(0,s.throws-1);s.result={...roll(random),id:(s.lastThrow?.id||0)+1,extraSettled:true};if(s.result.extra)s.throws++;s.lastThrow={id:s.result.id!,player,result:structuredClone(s.result)};applyThrowAugments(s,s.result);if(guardBackDo(s,s.result)){s.pendingResults=s.pendingResults?.filter(r=>r.id!==oldId)||[];s.result=null;}}
  else if(id==='forward')s.result={...s.result!,steps:1,name:'도'};
