@@ -48,7 +48,7 @@ function nextNode(node:string,first:boolean,route:Route|undefined,from:string|un
 export function destination(p:Piece,steps:number,route?:Route):Piece|null {
  if(p.node===DONE)return null;
  if(route&&!routesFor(p,steps).some(r=>r.id===route))return null;
- if(steps<0){if(!p.history.length)return null;const history=[...p.history];let node=p.node;for(let i=0;i<Math.abs(steps)&&history.length;i++)node=history.pop()!;return {node,history};}
+ if(steps<0){if(!p.history.length)return null;const history=[...p.history];let node=p.node;for(let i=0;i<Math.abs(steps)&&history.length;i++)node=history.pop()!;if(node===HOME&&p.node!=='home')return {node:'o20',history:Array.from({length:19},(_,i)=>`o${i+1}`)};return {node,history};}
  let node=p.node;const history=[...p.history];
  for(let i=0;i<steps&&node!==DONE;i++){const from=history.at(-1);history.push(node);node=nextNode(node,i===0,route,from);}
  return {node,history};
@@ -141,7 +141,7 @@ function moveSteps(s:State,index:number):number {
   if(s.players[s.turn].pieces.some(t=>t.kind==='vanguard'&&nodes.includes(t.node)))bonus++;steps+=Math.min(2,bonus);
  }if(p.kind==='goblin')steps=1;if(own(s,s.turn,'moonwalk'))steps=-steps;if(s.players[s.turn].stats?.lastDance===s.players[s.turn].baseTurns)steps*=2;return steps;
 }
-export function moveDestination(s:State,index:number,route?:Route):Piece|null {const actual=s.players[s.turn].pieces[index],p=actual&&own(s,s.turn,'moonwalk')&&actual.node===HOME?{...actual,node:'o20',history:[HOME,...Array.from({length:19},(_,j)=>`o${j+1}`)]}:actual;return p&&s.result&&!p.swallowedBy&&p.kind!=='pawn'&&p.kind!=='domain'&&!(p.frozenUntil&&(s.round||1)<p.frozenUntil)?((target)=>target?transformTarget(s,s.turn,index,own(s,s.turn,'moonwalk')&&target.node===HOME?{...target,node:DONE}:target):null)(destination(p,moveSteps(s,index),route)):null;}
+export function moveDestination(s:State,index:number,route?:Route):Piece|null {const actual=s.players[s.turn].pieces[index],p=actual&&own(s,s.turn,'moonwalk')&&actual.node===HOME?{...actual,node:'o20',history:[HOME,...Array.from({length:19},(_,j)=>`o${j+1}`)]}:actual;return p&&s.result&&!p.swallowedBy&&p.kind!=='pawn'&&p.kind!=='domain'&&!(p.frozenUntil&&(s.round||1)<p.frozenUntil)?((target)=>target?transformTarget(s,s.turn,index,own(s,s.turn,'moonwalk')&&(target.node===HOME||(target.node==='o20'&&moveSteps(s,index)<0))?{...target,node:DONE}:target):null)(destination(p,moveSteps(s,index),route)):null;}
 export function legalRoutes(s:State,index:number){const piece=s.players[s.turn].pieces[index];if(!piece||!s.result)return [];return routesFor(piece,moveSteps(s,index)).map(r=>({...r,destination:moveDestination(s,index,r.id)!.node}));}
 function settleResults(s:State,random:()=>number,now:number):State {
  s.phase='move';
@@ -217,7 +217,7 @@ export function move(state:State,index:number,random:()=>number=Math.random,now=
  const group=player.pieces.map((p,i)=>({p,i})).filter(({p,i})=>i===index||(!own(s,s.turn,'cannibal')&&original.node!==HOME&&sameCell(s,p.node,original.node)));
  const path=s.result!.steps<0?[original.node,target.node]:[original.node,...target.history.slice(original.history.length+1),target.node];
  s.lastMove={id:(state.lastMove?.id||0)+1,player:s.turn,indices:group.map(({i})=>i),path,captures:[]};
- for(const {i} of group)player.pieces[i]={...player.pieces[i],node:target.node,history:[...target.history]};
+ for(const {i} of group){player.pieces[i]={...player.pieces[i],node:target.node,history:[...target.history]};delete player.pieces[i].riding;}
  if(target.node!==HOME&&target.node!==DONE&&!own(s,s.turn,'cannibal'))for(const piece of player.pieces)if(sameCell(s,piece.node,target.node)){piece.node=target.node;piece.history=[...target.history];}
  let captured=false;
  if(target.node!==HOME&&target.node!==DONE)s.players.forEach((op,i)=>{

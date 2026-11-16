@@ -1,0 +1,19 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';
+import {createGame,destination,move,selectAugment,resolveAbility,DONE,type State} from './index.ts';
+import {checkCustomWins} from './custom.ts';
+function moving(s:State,player:number,steps:number){s.turn=player;s.phase='move';s.throws=0;s.pendingResults=[];s.result={name:steps<0?'빽도':'도',steps,extra:false};return s;}
+test('first do then back-do reaches the board start, then any forward result finishes',()=>{for(const style of ['normal','augment'] as const)for(let steps=1;steps<=5;steps++){
+ let s=createGame(3,false,()=>.5,0,[],style);s.players[0].pieces[0]={node:'o1',history:['home']};s.players[0].pieces.slice(1).forEach(p=>p.node=DONE);
+ s=move(moving(s,0,-1),0,()=>.5,0);assert.equal(s.players[0].pieces[0].node,'o20');assert.equal(s.ranks.includes(0),false);s=move(moving(s,0,steps),0,()=>.5,1);assert.equal(s.players[0].pieces[0].node,DONE);assert.equal(s.ranks.includes(0),true);
+ }assert.equal(destination({node:'home',history:[]},-1),null);assert.equal(destination({node:'o20',history:['o1','o2','o19']},-1)!.node,'o19');});
+test('hitchhiking whole stacks follow a host moved through a different representative and finish',()=>{
+ let s=createGame(3,false,()=>.5,0,[],'augment');s.players[0].slots=[{id:'custom-hitchhike',remaining:-1}];s.players[0].stats={ride:1};s.players[0].pieces[0]={node:'o1',history:['home']};s.players[0].pieces[1]={node:'o1',history:['home']};s.players[0].pieces.slice(2).forEach(p=>p.node=DONE);
+ s.players[1].pieces[0]={node:'o2',history:['home','o1']};s.players[1].pieces[1]={node:'o2',history:['home','o1']};s.players[1].pieces.slice(2).forEach(p=>p.node=DONE);
+ s=move(moving(s,0,1),0,()=>.5,0);assert.equal(s.players[0].pieces[0].riding,'1:0');assert.equal(s.players[0].pieces[1].riding,'1:0');
+ s.players[0].pieces[0].riding='1:1';s.players[0].pieces[1].riding='1:1';s.players[1].pieces[0].node='o20';s.players[1].pieces[1].node='o20';s=move(moving(s,1,1),0,()=>.5,1);
+ assert.ok(s.players[0].pieces.every(p=>p.node===DONE));assert.ok(s.ranks.includes(0));assert.ok(s.ranks.includes(1));assert.equal(s.phase,'over');assert.equal(new Set(s.ranks).size,3);
+});
+test('moving a riding stack independently detaches it instead of teleporting it later',()=>{let s=createGame(3,false,()=>.5,0,[],'augment');s.players[0].pieces[0]={node:'o2',history:['home','o1'],riding:'1:0'};s.players[1].pieces[0]={node:'o2',history:['home','o1']};s=move(moving(s,0,1),0,()=>.5,0);assert.equal(s.players[0].pieces[0].riding,undefined);s.players[1].pieces[0].node='o10';checkCustomWins(s);assert.equal(s.players[0].pieces[0].node,'o3');});
+test('legacy cyclic leech connections recover and propagate completion instead of deadlocking',()=>{const s=createGame(3,false,()=>.5,0,[],'augment');s.special={linked:{0:1,1:0},linkedOnly:[0,1]};s.players[0].pieces.forEach(p=>p.node=DONE);checkCustomWins(s);assert.ok(s.ranks.includes(0));assert.ok(s.ranks.includes(1));assert.equal(s.special.placements![0],s.special.placements![1]);});
+test('leech acquisition never offers a target linked back to the owner',()=>{let s=createGame(3,true,()=>.5,0,[],'augment');s.special={linked:{1:0},linkedOnly:[1]};s.selection={player:0,offers:['custom-leech'],queue:[],deadline:60000};s=selectAugment(s,0,'custom-leech',()=>.5,0);assert.deepEqual(s.special!.prompt!.options.map(o=>o.value),['2']);s=resolveAbility(s,0,'2',()=>.5,1);assert.equal(s.special!.linked![0],2);});
+test('leech piece transfer updates riding references after the source array shifts',()=>{let s=createGame(3,true,()=>.5,0,[],'augment');s.players[0].pieces[1]={node:'o10',history:[]};s.players[2].pieces[0]={node:'o10',history:[],riding:'0:1'};s.selection={player:0,offers:['custom-leech'],queue:[],deadline:60000};s=selectAugment(s,0,'custom-leech',()=>.5,0);s=resolveAbility(s,0,'1',()=>.5,1);assert.equal(s.players[2].pieces[0].riding,'0:0');assert.equal(s.players[2].pieces[0].node,'o10');});

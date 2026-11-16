@@ -3,7 +3,7 @@ import {io,type Socket} from 'socket.io-client';
 import {CHAT_LIMIT,type ChatMessage,type State,type CharacterId} from '@yutverse/engine';
 export type AccountUser={id:string;name:string;login:string|null};
 export type RoomListEntry={code:string;title:string;capacity:2|3|4;gameStyle?:'normal'|'augment';count:number;ownerName:string;locked:boolean;status:'waiting'|'full'|'playing'};
-export type PublicRoom={chat?:ChatMessage[];title?:string;locked?:boolean;code:string;capacity:2|3|4;gameStyle?:'normal'|'augment';owner:string;members:{id:string;name:string;ready:boolean;connected:boolean;character?:CharacterId}[];state:State|null;revision:number;me:number;actionDeadline:number|null};
+export type PublicRoom={spectator?:boolean;spectatorCount?:number;turnOrder?:'joined'|'random';chat?:ChatMessage[];title?:string;locked?:boolean;code:string;capacity:2|3|4;gameStyle?:'normal'|'augment';owner:string;members:{id:string;name:string;ready:boolean;connected:boolean;character?:CharacterId}[];state:State|null;revision:number;me:number;actionDeadline:number|null};
 type Reply={ok:boolean;error?:string;room?:PublicRoom;rooms?:RoomListEntry[]};
 function savedToken(){try{return sessionStorage.getItem('yutverse.token')||localStorage.getItem('yutverse.token')||''}catch{return ''}}
 function cachedUser():AccountUser|null{try{return JSON.parse(sessionStorage.getItem('yutverse.account')||localStorage.getItem('yutverse.account')||'null')}catch{return null}}

@@ -63,7 +63,7 @@ test('normal and supplied-augment two/three/four-player AI games complete with v
    else if(s.phase==='throw')s=throwYut(s,rng);
    else {const slot=s.players[s.turn].slots.find(a=>canUseAugment(s,s.turn,a.id)&&(!a.id.startsWith('custom-')||a.usedTurn!==s.players[s.turn].baseTurns));s=slot?useAugment(s,s.turn,slot.id,rng):legalMoves(s).length?move(s,chooseMove(s,'hard',rng),rng):skipMove(s,rng);}
   }
-  assert.equal(s.phase,'over');assert.equal(new Set(s.ranks).size,count);for(const p of s.players){assert.ok(p.slots.length<=10);assert.ok(p.slots.filter(x=>definition(x.id)!.hero).length<=1);}
+  assert.equal(s.phase,'over',JSON.stringify({style,count,seed,turn:s.turn,ranks:s.ranks,linked:s.special?.linked,players:s.players.map(p=>({slots:p.slots,pieces:p.pieces,stats:p.stats}))}));assert.equal(new Set(s.ranks).size,count);for(const p of s.players){assert.ok(p.slots.length<=10);assert.ok(p.slots.filter(x=>definition(x.id)!.hero).length<=1);}
  }
 });
 test('conflicting defenses cannot be selected, even if an invalid offer is supplied',()=>{

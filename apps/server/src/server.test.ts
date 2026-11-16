@@ -317,3 +317,25 @@ test('chat keeps only 50 messages, restores on reconnect and does not reset a li
   assert.equal((await request(clients[0],'chat',{kind:'reaction',reactionId:'clap'})).ok,true);assert.equal((await snapshot(clients[0])).revision,revisionNow);assert.ok(revision>=before.revision);
  }finally{await f.close()}
 });
+
+test('spectators are read-only, receive redacted state, reconnect, and leave without forfeiting',async()=>{
+ const f=await open();try{const {clients}=await setupRoom(f,3);await start(clients);const account=await f.session('관전자'),watcher=await f.connect(account.token),room=[...f.server.rooms.values()][0];const before=structuredClone(room.state),deadline=room.actionDeadline;
+ assert.equal((await request(watcher,'observe',{code:room.code})).ok,true);
+ const view=await watcher.timeout(3000).emitWithAck('sync',{}) as {room:{me:number;spectator:boolean;state:State}};assert.equal(view.room.me,-1);assert.equal(view.room.spectator,true);assert.deepEqual(view.room.state.selection!.offers,[]);
+ for(const [event,data] of [['act',{kind:'throw',revision:room.revision}],['ready',{}],['character',{character:'cat'}],['start',{}],['chat',{kind:'text',text:'간섭'}]] as const)assert.equal((await request(watcher,event,data)).ok,false);
+ room.state!.special={fogUntil:999,fogOwner:0,prompt:{owner:0,id:'custom-prediction',title:'선택',options:[{value:'private',label:'비밀'}],data:{secret:1},deadline:f.clock.time+60000}};room.state!.players[0].pieces[0]={node:'o3',history:['home','o1','o2']};
+ const masked=await snapshot(watcher);assert.equal(masked.state!.players[0].pieces[0].node,'hidden');assert.deepEqual(masked.state!.special!.prompt!.options,[]);assert.equal(masked.state!.special!.prompt!.data,undefined);room.state=before;
+ const replacement=await f.connect(account.token);assert.equal((await snapshot(replacement)).code,room.code);assert.equal((await request(replacement,'exit')).ok,true);assert.deepEqual(room.state,before);assert.equal(room.actionDeadline,deadline);assert.equal(room.spectators!.length,0);assert.equal(f.server.store.history(account.id).length,0);
+ }finally{await f.close()}
+});
+test('private spectator entry requires the password and only active matches can be watched',async()=>{
+ const f=await open();try{const a=await f.connect((await f.session('방장')).token),b=await f.connect((await f.session('참가자')).token),c=await f.connect((await f.session('관전자')).token);const made=await request(a,'create',{capacity:2,password:'secret'}),code=made.room!.code;
+ assert.equal((await request(c,'observe',{code,password:'secret'})).ok,false);await request(b,'join',{code,password:'secret'});await request(a,'ready');await request(b,'ready');await request(a,'start');assert.equal((await request(c,'observe',{code,password:'wrong'})).ok,false);assert.equal((await request(c,'observe',{code,password:'secret'})).ok,true);
+ }finally{await f.close()}
+});
+test('random turn order is shuffled on the server without losing owner or player identity',async()=>{
+ const f=await open();try{const {clients}=await setupRoom(f,4);const room=[...f.server.rooms.values()][0],before=room.members.map(m=>m.id),owner=room.owner;room.turnOrder='random';for(const c of clients)await request(c,'ready');assert.equal((await request(clients[0],'start')).ok,true);assert.deepEqual([...room.members.map(m=>m.id)].sort(),[...before].sort());assert.notDeepEqual(room.members.map(m=>m.id),before);assert.equal(room.owner,owner);
+ for(let i=0;i<clients.length;i++){const view=await snapshot(clients[i]);assert.equal(room.members[view.me!].id,before[i]);assert.equal(view.state!.players[view.me!].name,room.members[view.me!].name);}
+ }finally{await f.close()}
+});
+test('hitchhiking finishes both accounts and persists the match only once',async()=>{const f=await open();try{const {clients}=await setupRoom(f,2);await start(clients);const room=[...f.server.rooms.values()][0];room.state=createGame(2,false,()=>.5,f.clock.time,[],'augment');room.state.players.forEach(p=>p.pieces.slice(1).forEach(t=>t.node='done'));room.state.players[0].pieces[0]={node:'o20',history:['home','o19']};room.state.players[1].pieces[0]={node:'o19',history:['home'],riding:'0:0'};room.state.phase='move';room.state.throws=0;room.state.result={name:'도',steps:1,extra:false};assert.equal((await action(clients[0],'move',{index:0})).ok,true);assert.equal(room.state.phase,'over');assert.equal(new Set(room.state.ranks).size,2);f.server.tick();f.server.tick();assert.equal(f.server.store.db.prepare('SELECT COUNT(*) AS n FROM matches').get()!.n,1);}finally{await f.close()}});

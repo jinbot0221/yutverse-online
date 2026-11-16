@@ -27,6 +27,7 @@
     "test:turn-augments": "node scripts/turn-augments-browser-smoke.cjs",
     "test:family-browser": "node scripts/family-browser-smoke.cjs",
     "test:game-style": "node scripts/game-style-browser-smoke.cjs",
+    "test:observer-browser": "node scripts/observer-browser-smoke.cjs",
     "test:chat-browser": "node scripts/chat-browser-smoke.cjs",
     "test:augment-help": "node scripts/augment-help-browser-smoke.cjs",
     "test:catalog-browser": "node scripts/catalog-browser-smoke.cjs",

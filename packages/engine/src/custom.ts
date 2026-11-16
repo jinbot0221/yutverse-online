@@ -33,6 +33,18 @@ export function killSpecial(s:State,attacker:number,victim:number,index:number):
  for(let j=0;j<s.players.length;j++)if(j!==s.turn&&j!==victim&&own(s,j,'fisher')){const st=stats(s,j);st.fisher=(st.fisher||0)+1;if(st.fisher%2===0)addResult(s,j,2,'개');}
  if(s.lastMove)s.lastMove.captures.push({player:victim,indices:[index],from,to});return true;
 }
+function canLink(s:State,owner:number,target:number){const seen=new Set<number>([owner]);let next:number|undefined=target;while(next!==undefined){if(seen.has(next))return false;seen.add(next);next=s.special?.linked?.[next];}return true;}
+/** Synchronize whole stacks and chained rides before checking completion. */
+export function syncRiders(s:State){
+ const count=s.players.reduce((n,p)=>n+p.pieces.length,0);
+ for(let pass=0;pass<count;pass++){let changed=false;
+  s.players.forEach((p,owner)=>p.pieces.forEach((rider,index)=>{if(!rider.riding)return;const seen=new Set([`${owner}:${index}`]);let key:string|undefined=rider.riding,host:Piece|undefined;
+   while(key){if(seen.has(key)){delete rider.riding;return;}seen.add(key);const [j,k]:number[]=key.split(':').map(Number);host=s.players[j]?.pieces[k];if(!host||s.forfeited.includes(j)){delete rider.riding;rider.node='home';rider.history=[];return;}key=host.riding;}
+   if(host&&(rider.node!==host.node||rider.history.join(',')!==host.history.join(','))){rider.node=host.node;rider.history=[...host.history];changed=true;}
+   if(rider.node==='done'||rider.node==='home')delete rider.riding;
+  }));if(!changed)break;
+ }
+}
 export function acquireCustom(s:State,i:number,id:string,rng:()=>number,now:number){
  if(!id.startsWith('custom-'))return;const key=id.slice(7),sp=special(s),p=s.players[i],st=stats(s,i);const def=REQUESTED_AUGMENTS.find(a=>a.id===id);if(def&&!def.manual&&def.charges>0)take(s,i,id);
  if(key==='cat-lover'&&s.players.some(p=>p.slots.some(a=>a.id==='custom-cat')))winSpecial(s,i);
@@ -42,7 +54,7 @@ export function acquireCustom(s:State,i:number,id:string,rng:()=>number,now:numb
  if(key==='chosen-cat')sp.catForced=true;
  if(key==='fold')ask(s,i,id,'윷판 접는 방향을 고르세요',[{value:'horizontal',label:'가로로 접기'},{value:'vertical',label:'세로로 접기'}],now);
  if(key==='spin'){const turns=1+Math.floor(rng()*3);rotatePieces(s,turns);sp.rotation=(sp.rotation||0)+turns;ask(s,i,id,'한 번 더 돌릴까요?',[{value:'keep',label:'현재 방향 유지'},{value:'spin',label:'한 번 더 돌리기'}],now);}
- if(['leech','duel'].includes(key))ask(s,i,id,'상대 플레이어를 고르세요',targets(s,i),now);
+ if(['leech','duel'].includes(key))ask(s,i,id,'상대 플레이어를 고르세요',targets(s,i).filter(t=>key!=='leech'||canLink(s,i,Number(t.value))),now);
  if(key==='identity'){ask(s,i,id,'원래 내 색을 맞혀 보세요',['yellow','green','blue','red'].slice(0,s.players.length).map((x,j)=>({value:String(j),label:['노랑','초록','파랑','분홍'][j]})),now);if(special(s).prompt)special(s).prompt!.voters=targets(s,i).map(x=>Number(x.value));}
  if(key==='not-me'){const victims=s.players.flatMap((_,j)=>active(s,j)?[j]:[]),victim=victims[Math.floor(rng()*victims.length)];for(let j=0;j<s.players[victim].pieces.length;j++)killSpecial(s,i,victim,j);}
  if(key==='red-button')s.players.forEach((op,j)=>op.pieces.forEach((piece,k)=>{if(/^[abde][12]$/.test(piece.node)||piece.node==='c')killSpecial(s,i,j,k)}));
@@ -131,7 +143,7 @@ export function resolveCustom(s:State,actor:number,value:string,rng:()=>number,n
  else if(key==='hypnosis'){const [owner,index]=value.split(':').map(Number),piece=s.players[owner].pieces[index],to=destination(piece,s.result!.steps);if(to){shiftGroup(s,owner,index,to.node);s.players.forEach((op,j)=>{if(j!==owner&&op.pieces.some(t=>sameCell(s,t.node,to.node)))captureCustom(s,owner,index,j,to.node)});sp.consumeResult=true;}}
  else if(key==='fold'){sp.fold=value as 'horizontal'|'vertical';log(s,`${s.players[i].name}: 윷판을 ${value==='horizontal'?'가로':'세로'}로 접었습니다. 진행 경로와 완주 조건은 유지됩니다.`);}
  else if(key==='spin'){if(value==='spin'){const turns=1+Math.floor(rng()*3);rotatePieces(s,turns);sp.rotation=(sp.rotation||0)+turns;}}
- else if(key==='leech'){const target=Number(value),piece=Math.max(0,s.players[i].pieces.findIndex(p=>p.node==='home'));if(piece>=0)s.players[Number(value)].pieces.push(s.players[i].pieces.splice(piece,1)[0]);(sp.linked??={})[i]=target;(sp.linkedOnly??=[]).push(i);}
+ else if(key==='leech'){const target=Number(value),piece=s.players[i].pieces.findIndex(p=>p.node==='home');if(!canLink(s,i,target))return false;if(piece>=0){const newIndex=s.players[target].pieces.length;s.players[target].pieces.push(s.players[i].pieces.splice(piece,1)[0]);for(const p of s.players)for(const t of p.pieces)for(const field of ['riding','swallowedBy'] as const){const key=t[field];if(!key)continue;const [owner,index]=key.split(':').map(Number);if(owner===i)t[field]=index===piece?`${target}:${newIndex}`:`${owner}:${index>piece?index-1:index}`;}}(sp.linked??={})[i]=target;(sp.linkedOnly??=[]).push(i);}
  else if(key==='duel'){const target=Number(value);(sp.duels??=[]).push({owner:i,target,end:s.players[target].baseTurns+3,done:s.players[target].pieces.filter(p=>p.node==='done').length});}
  else if(key==='delivery')(sp.delivered??={})[i]=value;
  else if(key==='detective'){(sp.blocked??=[]).push(value);for(const choice of s.choices)if(choice.id===value&&choice.round===(s.round||1))s.players[choice.player].slots=s.players[choice.player].slots.filter(a=>a.id!==value);complete(s,i,2);}
@@ -195,6 +207,9 @@ export function customTurn(s:State,previous:number,wrapped:boolean,rng:()=>numbe
  for(const duel of sp.duels||[])if(duel.target===previous&&s.players[previous].baseTurns>=duel.end){if(s.players[previous].pieces.filter(t=>t.node==='done').length>duel.done)loseSpecial(s,duel.owner);else loseSpecial(s,previous);}sp.duels=sp.duels?.filter(d=>active(s,d.owner)&&active(s,d.target));
 }
 export function checkCustomWins(s:State){
+ syncRiders(s);
+ // Recover legacy cyclic leech links by making one member independent.
+ for(let i=0;i<s.players.length;i++)if(s.special?.linked?.[i]!==undefined&&!canLink(s,i,s.special.linked[i])){delete s.special.linked[i];s.special.linkedOnly=s.special.linkedOnly?.filter(j=>j!==i);log(s,'서로 연결된 거머리 관계를 정리했습니다.');}
  for(const duel of s.special?.duels||[])if(s.players[duel.target].pieces.filter(t=>t.node==='done').length>duel.done)loseSpecial(s,duel.owner);
  for(let i=0;i<s.players.length;i++){if(!active(s,i))continue;const p=s.players[i],st=stats(s,i),board=p.pieces.filter(t=>nodes.includes(t.node));
  if(p.pieces.some(t=>['marathon','kim'].includes(t.kind||'')&&t.node==='done'))winSpecial(s,i);
@@ -208,7 +223,7 @@ export function checkCustomWins(s:State){
 }
 export function captureCustom(s:State,i:number,index:number,victim:number,target:string):number{
  const piece=s.players[i].pieces[index],op=s.players[victim];if(own(s,i,'peace')||own(s,victim,'peace'))return 0;
- const indices=op.pieces.flatMap((t,j)=>sameCell(s,t.node,target)?[j]:[]);if(own(s,i,'hitchhike')&&stats(s,i).ride&&indices.length){piece.riding=`${victim}:${indices[0]}`;return 1;}let count=0;
+ const indices=op.pieces.flatMap((t,j)=>sameCell(s,t.node,target)?[j]:[]);if(own(s,i,'hitchhike')&&stats(s,i).ride&&indices.length){const host=`${victim}:${indices[0]}`;let key:string|undefined=host;const seen=new Set<string>();while(key&&!seen.has(key)){seen.add(key);const [a,b]:number[]=key.split(':').map(Number);key=s.players[a]?.pieces[b]?.riding;}if(seen.has(`${i}:${index}`)||key)return 0;for(const moved of s.lastMove?.indices||[index])s.players[i].pieces[moved].riding=host;return 1;}let count=0;
  for(const k of own(s,victim,'friend-shield')?indices.slice(0,1):indices){const enemy=op.pieces[k];const bombCarrier=s.players[i].pieces.find(p=>sameCell(s,p.node,piece.node)&&p.bomb);
  if(piece.kind==='pelican'){(piece.absorbed??=[]).push(victim);enemy.node='home';enemy.history=[];enemy.swallowedBy=`${i}:${index}`;if(bombCarrier?.bomb){enemy.bomb=bombCarrier.bomb;delete bombCarrier.bomb;}count++;continue;}
  if(killSpecial(s,i,victim,k)){if(bombCarrier?.bomb){enemy.bomb=bombCarrier.bomb;delete bombCarrier.bomb;}count++;if(piece.kind==='zombie')enemy.kind='zombie';}
@@ -223,7 +238,6 @@ export function transformTarget(s:State,i:number,index:number,target:Piece):Piec
 }
 export function customLanding(s:State,i:number,index:number,original:string,captured:boolean,finished:number){
  const p=s.players[i],piece=p.pieces[index],sp=special(s),st=stats(s,i),node=piece.node;
- for(const op of s.players)for(const rider of op.pieces)if(rider.riding===`${i}:${index}`){rider.node=node;rider.history=[...piece.history];}
  if(piece.kind==='pelican'&&node==='done')for(const victim of piece.absorbed||[])loseSpecial(s,victim);
  if(captured&&s.result?.steps===-1&&own(s,i,'back-catch')){st.backCatch=(st.backCatch||0)+1;if(st.backCatch>=2)winSpecial(s,i);}
  if(finished){if(st.adventureEnd)st.adventureEnd+=finished;for(const queen of p.pieces)if(queen.kind==='queen')queen.life=(queen.life||1)+finished;}

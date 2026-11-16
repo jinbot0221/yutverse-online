@@ -10,7 +10,7 @@ import {resolve} from 'node:path';
 import {createGame,throwYut,move,legalRoutes,selectResult,selectAugment,rerollAugments,resolveAbility,expireAbility,activateNative,useAugment,skipMove,expireSelection,forfeit,DEFAULT_CHARACTER,isCharacterId,type CharacterId,type State,type GameStyle,position,foldedPosition} from '@yutverse/engine';
 import {Store} from './store.ts';
 export type Member={id:string;name:string;ready:boolean;connected:boolean;disconnectedAt:number|null;departed?:boolean;character?:CharacterId};
-export type Room={code:string;matchId:string;capacity:2|3|4;gameStyle?:GameStyle;owner:string;members:Member[];state:State|null;revision:number;actionDeadline:number|null;createdAt:number;title?:string;passwordSalt?:string;passwordHash?:string};
+export type Room={spectators?:{id:string;name:string}[];turnOrder?:'joined'|'random';code:string;matchId:string;capacity:2|3|4;gameStyle?:GameStyle;owner:string;members:Member[];state:State|null;revision:number;actionDeadline:number|null;createdAt:number;title?:string;passwordSalt?:string;passwordHash?:string};
 export type RoomListEntry={code:string;title:string;capacity:2|3|4;gameStyle?:GameStyle;count:number;ownerName:string;locked:boolean;status:'waiting'|'full'|'playing'};
 type Options={dbPath:string;random?:()=>number;now?:()=>number;graceMs?:number;turnMs?:number;staticDir?:string;webOrigin?:string};
 export function createGameServer(options:Options){
@@ -74,17 +74,18 @@ export function createGameServer(options:Options){
   const state=room.state?structuredClone(room.state):null;
   if(state?.selection&&room.members[state.selection.player].id!==userId)state.selection.offers=[];
   const viewer=room.members.findIndex(m=>m.id===userId),prompt=state?.special?.prompt;if(prompt){if(prompt.id==='custom-bluff-resolve'&&viewer!==prompt.owner){delete prompt.data;if(state?.lastThrow)state.lastThrow.result={name:'비공개',steps:0,extra:false};if(state){state.pendingResults=[];state.throws=0;}}if(prompt.answers){prompt.answers=Object.hasOwn(prompt.answers,viewer)?{[viewer]:prompt.answers[viewer]}:{};}}
-  if(state?.special?.fogUntil&&state.turns<state.special.fogUntil&&viewer!==state.special.fogOwner){const ownNodes=state.players[viewer].pieces.map(p=>p.node);for(let j=0;j<state.players.length;j++)if(j!==viewer)for(const piece of state.players[j].pieces)if(piece.node!=='home'&&piece.node!=='done'&&!ownNodes.some(node=>{const a=foldedPosition(node,state!.special?.fold),b=foldedPosition(piece.node,state!.special?.fold);return Math.hypot(a[0]-b[0],a[1]-b[1])<=2.5})){piece.node='hidden';piece.history=[];}}
+  if(state?.special?.fogUntil&&state.turns<state.special.fogUntil&&viewer!==state.special.fogOwner){const ownNodes=state.players[viewer]?.pieces.map(p=>p.node)||[];for(let j=0;j<state.players.length;j++)if(j!==viewer)for(const piece of state.players[j].pieces)if(piece.node!=='home'&&piece.node!=='done'&&!ownNodes.some(node=>{const a=foldedPosition(node,state!.special?.fold),b=foldedPosition(piece.node,state!.special?.fold);return Math.hypot(a[0]-b[0],a[1]-b[1])<=2.5})){piece.node='hidden';piece.history=[];}}
   if(state)state.players.forEach((p,j)=>{if(j!==viewer&&p.stats)p.stats=Object.fromEntries(Object.entries(p.stats).filter(([key])=>['hp','ritual','coins','kills','monsterGoal'].includes(key)));});
-  const {passwordHash,passwordSalt,...visible}=room;
-  return {...visible,title:room.title||`${room.members.find(m=>m.id===room.owner)?.name||'여행자'}의 윷놀이`,locked:Boolean(passwordHash),chat:chats.get(room.code)||[],state,members:room.members.map(({disconnectedAt,...m})=>m),me:room.members.findIndex(m=>m.id===userId)};
+  if(viewer<0&&state?.special?.prompt){state.special.prompt.options=[];delete state.special.prompt.data;state.special.prompt.answers={};}
+  const {passwordHash,passwordSalt,spectators,...visible}=room;
+  return {...visible,title:room.title||`${room.members.find(m=>m.id===room.owner)?.name||'여행자'}의 윷놀이`,locked:Boolean(passwordHash),chat:viewer<0?[]:chats.get(room.code)||[],spectator:viewer<0,spectatorCount:spectators?.length||0,state,members:room.members.map(({disconnectedAt,...m})=>m),me:room.members.findIndex(m=>m.id===userId)};
  };
  function directory():RoomListEntry[]{return [...rooms.values()].filter(r=>r.state?.phase!=='over').sort((a,b)=>Number(Boolean(a.state))-Number(Boolean(b.state))||b.createdAt-a.createdAt).map(r=>({code:r.code,gameStyle:r.gameStyle??'normal',title:r.title||`${r.members.find(m=>m.id===r.owner)?.name||'여행자'}의 윷놀이`,capacity:r.capacity,count:r.members.filter(m=>!m.departed).length,ownerName:r.members.find(m=>m.id===r.owner)?.name||'여행자',locked:Boolean(r.passwordHash),status:r.state?'playing':r.members.length>=r.capacity?'full':'waiting'}));}
  let directorySnapshot='';function broadcastDirectory(){const list=directory(),snapshot=JSON.stringify(list);if(snapshot!==directorySnapshot){directorySnapshot=snapshot;io.emit('rooms',list);}}
- function publish(room:Room){room.revision++;store.saveRoom(room);for(const member of room.members){const sid=sessions.get(member.id);if(sid&&!member.departed)io.to(sid).emit('room',publicRoom(room,member.id));}broadcastDirectory();}
+ function publish(room:Room){room.revision++;store.saveRoom(room);for(const member of room.members){const sid=sessions.get(member.id);if(sid&&!member.departed)io.to(sid).emit('room',publicRoom(room,member.id));}for(const watcher of room.spectators||[]){const sid=sessions.get(watcher.id);if(sid)io.to(sid).emit('room',publicRoom(room,watcher.id));}broadcastDirectory();}
  function apply(room:Room,state:State){if(state===room.state)return false;const before=room.state;for(let i=0;i<room.members.length;i++)if(before?.forfeited.includes(i)&&!state.forfeited.includes(i)&&!state.ranks.includes(i)){room.members[i].departed=false;if(!room.members[i].connected)room.members[i].disconnectedAt=now();}room.state=state;room.actionDeadline=(state.special?.prompt||['over','augment'].includes(state.phase))?null:now()+turnMs;publish(room);return true;}
  function removeLobby(room:Room,id:string){room.members=room.members.filter(m=>m.id!==id);if(!room.members.length){rooms.delete(room.code);chats.delete(room.code);store.removeRoom(room.code);broadcastDirectory();return;}if(room.owner===id)room.owner=room.members[0].id;publish(room);}
- function findRoom(id:string){return [...rooms.values()].find(r=>r.members.some(m=>m.id===id&&!m.departed)&&(r.state?.phase!=='over'));}
+ function findRoom(id:string){return [...rooms.values()].find(r=>(r.members.some(m=>m.id===id&&!m.departed)||r.spectators?.some(m=>m.id===id))&&(r.state?.phase!=='over'));}
  for(const raw of store.rooms()){
   const r=raw as Room;for(const m of r.members){m.connected=false;m.disconnectedAt=now();}
   if(r.state?.phase!=='over'){r.actionDeadline=r.state?.phase==='augment'?null:now()+turnMs;rooms.set(r.code,r);store.saveRoom(r);}
@@ -108,20 +109,22 @@ export function createGameServer(options:Options){
  io.use((socket,next)=>{const user=store.user(socket.handshake.auth?.token);if(!user)return next(new Error('유효한 세션이 필요합니다.'));socket.data.user={id:user.id,name:user.name};next();});
  io.on('connection',socket=>{
   const user=socket.data.user as {id:string;name:string};const old=sessions.get(user.id);sessions.set(user.id,socket.id);if(old)io.sockets.sockets.get(old)?.disconnect(true);
-  for(const room of rooms.values()){const member=room.members.find(m=>m.id===user.id&&!m.departed);if(member){member.connected=true;member.disconnectedAt=null;publish(room);}}
+  for(const room of rooms.values()){const member=room.members.find(m=>m.id===user.id&&!m.departed);if(member){member.connected=true;member.disconnectedAt=null;publish(room);}else if(room.spectators?.some(m=>m.id===user.id))socket.emit('room',publicRoom(room,user.id));}
   socket.emit('identity',user);socket.emit('rooms',directory());
   function handle(event:string,fn:(data:Record<string,unknown>)=>unknown){socket.on(event,async(input,ack)=>{const reply=typeof ack==='function'?ack:()=>{};try{
    if(sessions.get(user.id)!==socket.id)throw Error('세션이 다른 창에서 연결되었습니다.');
    if(!store.user(socket.handshake.auth?.token))throw Error('다시 로그인하세요.');
    if(!limit(`socket:${user.id}`,40))throw Error('요청이 너무 빠릅니다.');
    if(input!==undefined&&(input===null||typeof input!=='object'||Array.isArray(input)))throw Error('요청 형식이 잘못되었습니다.');
+   if(['act','ready','character','start','chat'].includes(event)&&roomFor().spectators?.some(m=>m.id===user.id))throw Error('관전 중에는 게임 조작과 채팅 전송을 할 수 없습니다.');
    tick();const value=await fn(input||{});reply({ok:true,...(value as object||{})});
   }catch(error){reply({ok:false,error:error instanceof Error?error.message:'요청에 실패했습니다.'});}});}
-  function roomFor(){const r=[...rooms.values()].find(r=>r.members.some(m=>m.id===user.id&&!m.departed)&&r.state?.phase!=='over')||[...rooms.values()].find(r=>r.members.some(m=>m.id===user.id&&!m.departed));if(!r)throw Error('참가 중인 방이 없습니다.');return r;}
+  function roomFor(){const r=[...rooms.values()].find(r=>(r.members.some(m=>m.id===user.id&&!m.departed)||r.spectators?.some(m=>m.id===user.id))&&r.state?.phase!=='over')||[...rooms.values()].find(r=>(r.members.some(m=>m.id===user.id&&!m.departed)||r.spectators?.some(m=>m.id===user.id)));if(!r)throw Error('참가 중인 방이 없습니다.');return r;}
   handle('rooms',()=>({rooms:directory()}));
   handle('create',async data=>{
    if(data.character!==undefined&&!isCharacterId(data.character))throw Error('선택할 수 없는 캐릭터입니다.');
    if(data.gameStyle!==undefined&&data.gameStyle!=='normal'&&data.gameStyle!=='augment')throw Error('지원하지 않는 게임 방식입니다.');
+   if(data.turnOrder!==undefined&&data.turnOrder!=='joined'&&data.turnOrder!=='random')throw Error('지원하지 않는 순서 방식입니다.');
    if(data.capacity!==2&&data.capacity!==3&&data.capacity!==4)throw Error('2~4인 방만 지원합니다.');
    if(data.title!==undefined&&(typeof data.title!=='string'||data.title.trim().length>32))throw Error('방 제목은 32자 이내입니다.');
    if(data.password!==undefined&&(typeof data.password!=='string'||data.password.length>32))throw Error('방 비밀번호는 32자 이내입니다.');
@@ -133,7 +136,7 @@ export function createGameServer(options:Options){
    if(rooms.size>=200)throw Error('방이 가득 찼습니다.');
    for(const old of rooms.values())if(old.state?.phase==='over'){const member=old.members.find(m=>m.id===user.id);if(member)member.departed=true;}
    let code='';do{code=Array.from({length:6},()=> 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[randomInt(32)]).join('');}while(rooms.has(code));
-   const room:Room={code,title,gameStyle:data.gameStyle??'normal',passwordSalt:salt,passwordHash,matchId:randomUUID(),capacity:data.capacity,owner:user.id,members:[{...user,character:isCharacterId(data.character)?data.character:DEFAULT_CHARACTER,ready:false,connected:true,disconnectedAt:null}],state:null,revision:0,actionDeadline:null,createdAt:now()};rooms.set(code,room);publish(room);return {room:publicRoom(room,user.id)};
+   const room:Room={code,title,turnOrder:data.turnOrder==='random'?'random':'joined',gameStyle:data.gameStyle??'normal',passwordSalt:salt,passwordHash,matchId:randomUUID(),capacity:data.capacity,owner:user.id,members:[{...user,character:isCharacterId(data.character)?data.character:DEFAULT_CHARACTER,ready:false,connected:true,disconnectedAt:null}],state:null,revision:0,actionDeadline:null,createdAt:now()};rooms.set(code,room);publish(room);return {room:publicRoom(room,user.id)};
   });
   handle('join',async data=>{
    if(data.character!==undefined&&!isCharacterId(data.character))throw Error('선택할 수 없는 캐릭터입니다.');
@@ -168,10 +171,25 @@ export function createGameServer(options:Options){
    chats.set(room.code,[...(chats.get(room.code)||[]),message].slice(-CHAT_LIMIT));
    for(const member of room.members){const sid=sessions.get(member.id);if(sid&&!member.departed)io.to(sid).emit('chat',{code:room.code,message});}
   });
+  handle('observe',async data=>{
+   if(typeof data.code!=='string'||!/^[A-Z2-9]{6}$/.test(data.code))throw Error('방 코드를 확인하세요.');
+   const room=rooms.get(data.code);if(!room?.state||room.state.phase==='over')throw Error('진행 중인 방만 관전할 수 있습니다.');
+   if(room.passwordHash){
+    if(!limit(`room-password:${user.id}`,8,60000))throw Error('잠시 후 다시 시도하세요.');
+    if(typeof data.password!=='string'||data.password.length>32||!room.passwordSalt)throw Error('방 비밀번호를 입력하세요.');
+    const attempt=await digestPassword(data.password,room.passwordSalt,64) as Buffer;
+    if(!timingSafeEqual(attempt,Buffer.from(room.passwordHash,'hex')))throw Error('방 비밀번호가 맞지 않습니다.');
+   }
+   if(sessions.get(user.id)!==socket.id||!store.user(socket.handshake.auth?.token))throw Error('다시 연결한 뒤 시도하세요.');
+   if(findRoom(user.id))throw Error('먼저 현재 방에서 나가주세요.');
+   if(rooms.get(room.code)!==room||(room.state as State).phase==='over'||(room.spectators?.length||0)>=20)throw Error('지금은 관전할 수 없습니다.');
+   (room.spectators??=[]).push({id:user.id,name:user.name});publish(room);return {room:publicRoom(room,user.id)};
+  });
+  function leaveObserver(room:Room){if(!room.spectators?.some(m=>m.id===user.id))return false;room.spectators=room.spectators.filter(m=>m.id!==user.id);publish(room);socket.emit('left');return true;}
   handle('sync',()=>{const room=roomFor();return {room:publicRoom(room,user.id)};});
   handle('character',data=>{const room=roomFor();if(room.state)throw Error('경기 중에는 캐릭터를 바꿀 수 없습니다.');if(!isCharacterId(data.character))throw Error('선택할 수 없는 캐릭터입니다.');const member=room.members.find(m=>m.id===user.id)!;member.character=data.character;member.ready=false;publish(room);return {room:publicRoom(room,user.id)};});
   handle('ready',()=>{const room=roomFor();if(room.state)throw Error('이미 시작된 경기입니다.');const m=room.members.find(m=>m.id===user.id)!;m.ready=!m.ready;publish(room);});
-  handle('start',()=>{const room=roomFor();if(room.owner!==user.id||room.state||room.members.length!==room.capacity||room.members.some(m=>!m.ready||!m.connected))throw Error('방장만 모두 준비된 경기를 시작할 수 있습니다.');const s=createGame(room.capacity,true,random,now(),room.members.map(m=>m.character??DEFAULT_CHARACTER),room.gameStyle);s.players.forEach((p,i)=>p.name=room.members[i].name);apply(room,s);});
+  handle('start',()=>{const room=roomFor();if(room.owner!==user.id||room.state||room.members.length!==room.capacity||room.members.some(m=>!m.ready||!m.connected))throw Error('방장만 모두 준비된 경기를 시작할 수 있습니다.');if(room.turnOrder==='random'){for(let k=room.members.length-1;k>0;k--){const j=Math.floor(random()*(k+1));[room.members[k],room.members[j]]=[room.members[j],room.members[k]];}}const s=createGame(room.capacity,true,random,now(),room.members.map(m=>m.character??DEFAULT_CHARACTER),room.gameStyle);s.players.forEach((p,i)=>p.name=room.members[i].name);apply(room,s);});
   handle('act',data=>{
    const room=roomFor(),state=room.state,index=room.members.findIndex(m=>m.id===user.id);if(!state||state.phase==='over')throw Error('진행 중인 경기가 없습니다.');
    if(data.revision!==room.revision)throw Error('상태가 갱신되었습니다. 다시 시도하세요.');
@@ -190,12 +208,12 @@ export function createGameServer(options:Options){
    }
    if(!apply(room,next))throw Error('현재 사용할 수 없는 행동입니다.');
   });
-  handle('exit',()=>{const room=roomFor(),index=room.members.findIndex(m=>m.id===user.id);
+  handle('exit',()=>{const room=roomFor();if(leaveObserver(room))return;const index=room.members.findIndex(m=>m.id===user.id);
    if(!room.state)removeLobby(room,user.id);
    else{if(room.state.phase!=='over'&&!room.state.ranks.includes(index)&&!room.state.forfeited.includes(index))apply(room,forfeit(room.state,index,random,now()));room.members[index].departed=true;publish(room);}
    socket.emit('left');
   });
-  handle('leave',()=>{const room=roomFor();if(room.state&&room.state.phase!=='over')throw Error('경기 중에는 먼저 기권하세요.');if(!room.state)removeLobby(room,user.id);else{room.members.find(m=>m.id===user.id)!.departed=true;publish(room);}socket.emit('left');});
+  handle('leave',()=>{const room=roomFor();if(leaveObserver(room))return;if(room.state&&room.state.phase!=='over')throw Error('경기 중에는 먼저 기권하세요.');if(!room.state)removeLobby(room,user.id);else{room.members.find(m=>m.id===user.id)!.departed=true;publish(room);}socket.emit('left');});
   socket.on('disconnect',()=>{if(sessions.get(user.id)!==socket.id)return;sessions.delete(user.id);for(const room of rooms.values()){const member=room.members.find(m=>m.id===user.id&&!m.departed);if(member){member.connected=false;member.disconnectedAt=now();publish(room);}}});
  });
  return {app,http,io,store,rooms,tick,async close(){clearInterval(timer);await new Promise<void>(r=>io.close(()=>r()));if(http.listening)await new Promise<void>(r=>http.close(()=>r()));store.close();}};

@@ -88,7 +88,7 @@ export function Board({s:live,onMove,low,me,animation=null,throwAnimation=null,p
   const rendered=new Set<string>();
   return p.pieces.flatMap((piece,i)=>{
    if(piece.node===DONE||piece.node==='hidden'||piece.swallowedBy)return [];
-   if(s.special?.fogUntil&&s.turns<s.special.fogUntil&&me!==s.special.fogOwner&&j!==me&&piece.node!==HOME&&!s.players[me].pieces.some(own=>{const a=boardPosition(own.node),b=boardPosition(piece.node);return Math.hypot(a[0]-b[0],a[1]-b[1])<=2.5}))return [];
+   if(s.special?.fogUntil&&s.turns<s.special.fogUntil&&me!==s.special.fogOwner&&j!==me&&piece.node!==HOME&&!(s.players[me]?.pieces||[]).some(own=>{const a=boardPosition(own.node),b=boardPosition(piece.node);return Math.hypot(a[0]-b[0],a[1]-b[1])<=2.5}))return [];
    const atHome=piece.node===HOME;if(!atHome&&rendered.has(cellKey(s,piece.node)))return [];rendered.add(cellKey(s,piece.node));
    let [x,z]=atHome?homePosition(j,i):boardPosition(piece.node);
    const shared=!atHome&&s.players.some((other,k)=>k!==j&&!s.forfeited.includes(k)&&other.pieces.some(q=>sameCell(s,q.node,piece.node)));
