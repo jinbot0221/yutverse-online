@@ -5,7 +5,7 @@ export {REQUESTED_AUGMENTS} from './requested-augments.ts';
 export type GameStyle = 'normal'|'augment';
 export type AugmentId = `custom-${string}`|'back-guard'|'do-plus'|'gae-plus'|'geol-plus'|'launch'|'late'|'stack'|'hunter'|'shield'|'return'|'finish'|'reroll'|'boost'|'leap'|'forward'|'steady'|'reserve'|'hero-wind'|'hero-guard'|'hero-phoenix'|'hero-finish'|'double-reserve'|'first-boost'|'steady-pocket'|'hero-pouch'|'do-echo'|'mo-echo';
 export type Augment = {id:AugmentId;name:string;description:string;hero:boolean;manual:boolean;charges:number;conflicts?:AugmentId[]};
-export type Slot = {id:AugmentId;remaining:number;usedTurn?:number;original?:AugmentId;restoreRound?:number};
+export type Slot = {id:AugmentId;remaining:number;usedTurn?:number;original?:AugmentId;restoreRound?:number;modifiedBy?:number};
 export const ACTIVE_AUGMENT_IDS:AugmentId[]=['shield','boost','back-guard'];
 export const AUGMENTS:Augment[] = [
  ...REQUESTED_AUGMENTS.map(a=>({...a,id:a.id as AugmentId,hero:false})),

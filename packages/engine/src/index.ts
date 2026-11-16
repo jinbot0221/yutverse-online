@@ -1,3 +1,4 @@
+export * from './target-effects.ts';
 export * from './chat.ts';
 import {sameCell,cellKey} from './fold.ts';
 export * from './fold.ts';
@@ -10,7 +11,7 @@ import {CHARACTERS,DEFAULT_CHARACTER,type CharacterId} from './characters.ts';
 export * from './characters.ts';
 export * from './augments.ts';
 export type Result = { name: string; steps: number; extra: boolean; bonus?:number; id?:number; sticks?:boolean[];throwSticks?:boolean[]; extraSettled?:boolean };
-export type Piece = { node: string; history: string[];kind?:string;shield?:number;life?:number;strength?:number;revive?:string;spirit?:boolean;bomb?:{round:number;owner:number};domainEnd?:number;frozenUntil?:number;nativeUsed?:number;swallowedBy?:string;riding?:string;absorbed?:number[] };
+export type Piece = { node: string; history: string[];kind?:string;shield?:number;life?:number;strength?:number;revive?:string;spirit?:boolean;bomb?:{round:number;owner:number};domainEnd?:number;frozenUntil?:number;frozenBy?:number;nativeUsed?:number;swallowedBy?:string;riding?:string;absorbed?:number[] };
 export type Player = { name: string; pieces: Piece[]; slots:Slot[]; baseTurns:number;stats?:Record<string,number>;prediction?:number[];snipe?:string[]; character?:CharacterId };
 export type Route='outer'|'diagonal'|'homeward'|'far';
 export type PlayerCount = 2|3|4;
