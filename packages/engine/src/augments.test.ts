@@ -1,12 +1,12 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {AUGMENTS,candidates,definition,createGame,selectAugment,expireSelection,throwYut,move,moveDestination,useAugment,canUseAugment,forfeit,legalMoves,skipMove,chooseMove,HOME,DONE,type State,type AugmentId} from './index.ts';
+import {AUGMENTS,candidates,definition,createGame,selectAugment,expireSelection,throwYut,move,moveDestination,useAugment,canUseAugment,forfeit,legalMoves,skipMove,chooseMove,HOME,DONE,type State,type AugmentId,REQUESTED_AUGMENTS,resolveAbility} from './index.ts';
 function state(...ids:AugmentId[]):State {const s=createGame();s.phase='move';s.result={name:'도',steps:1,extra:false};s.throws=0;s.players[0].slots=ids.map(id=>({id,remaining:definition(id)!.charges}));return s;}
 function capture(id?:AugmentId){const s=state();s.players[0].pieces[0]={node:'o1',history:[HOME]};s.players[1].pieces[0]={node:'o2',history:[HOME,'o1']};if(id)s.players[1].slots=[{id,remaining:definition(id)!.charges}];return s;}
-test('three current cards remain distinct, rechargeable and respect legacy slot limits',()=>{
- assert.equal(AUGMENTS.length,27);assert.equal(new Set(AUGMENTS.map(a=>a.id)).size,27);
+test('three current cards remain distinct, non-rechargeable and respect legacy slot limits',()=>{
+ assert.equal(AUGMENTS.length,27+REQUESTED_AUGMENTS.length);assert.equal(new Set(AUGMENTS.map(a=>a.id)).size,27+REQUESTED_AUGMENTS.length);
  const slots=[{id:'hero-wind' as const,remaining:-1},{id:'shield' as const,remaining:0}];
- for(let i=0;i<30;i++){const offers=candidates(slots,Math.random);assert.equal(offers.length,3);assert.deepEqual([...offers].sort(),['back-guard','boost','shield']);}
+ for(let i=0;i<30;i++){const offers=candidates(slots,Math.random);assert.equal(offers.length,2);assert.deepEqual([...offers].sort(),['back-guard','boost']);}
  assert.deepEqual(candidates(['do-plus','gae-plus','geol-plus','launch','late'].map(id=>({id:id as AugmentId,remaining:0})),Math.random),[]);
 });
 test('selection freezes the whole game and timeout selects only at 60 seconds',()=>{
@@ -14,13 +14,13 @@ test('selection freezes the whole game and timeout selects only at 60 seconds',(
  assert.equal(selectAugment(s,1,s.selection!.offers[0]),s);assert.equal(selectAugment(s,0,'not-real'),s);assert.equal(expireSelection(s,60099),s);
  const next=expireSelection(s,60100,()=>.5);assert.equal(next.players[0].slots.length,1);assert.equal(next.selection!.player,1);assert.equal(next.selection!.deadline,120100);
 });
-test('basic turns 2,4,6,8 add slots; extra throws never increment the basic turn',()=>{
- let s=createGame(3,true,()=>.3);while(s.selection)s=selectAugment(s,s.selection.player,s.selection.offers[0],()=>.3);
- s.players[0].slots=[];s.phase='throw';const before=s.players[0].baseTurns;
- s=throwYut(s,()=>.9);s=move(s,0);assert.equal(s.players[0].baseTurns,before);
- // Enter player zero's next basic turn using a non-extra result.
- for(const turn of [1,2,3,4,5,6,7]){s.turn=2;s.pendingResults=[];s.phase='move';s.result={name:'도',steps:1,extra:false};s.throws=0;s.players[0].baseTurns=turn;s.players[2].pieces=s.players[2].pieces.map(()=>({node:HOME,history:[]}));s=move(s,1);assert.equal(s.players[0].baseTurns,turn+1);assert.equal(s.phase,[2,4,6,8].includes(turn+1)?'augment':'throw');if(s.selection)s=selectAugment(s,0,s.selection.offers[0]);}
- assert.ok(s.players[0].slots.length<=3);assert.equal(s.players[0].slots.reduce((sum,slot)=>sum+slot.remaining,0),4);
+test('rounds 1,6,12 offer all active players once; extra throws do not advance rounds',()=>{
+ for(const count of [2,3,4] as const)for(const style of ['normal','augment'] as const){
+ let s=createGame(count,true,()=>.3,0,[],style);while(s.selection)s=selectAugment(s,s.selection.player,s.selection.offers[0],()=>.3,0);
+ assert.equal(s.round,1);s.phase='throw';s=throwYut(s,()=>.1);assert.equal(s.round,1);
+ for(let round=2;round<=13;round++){s.turn=count-1;s.round=round-1;s.pendingResults=[];s.phase='move';s.selection=null;s.result={name:'도',steps:1,extra:false};s.throws=0;s.players[count-1].pieces=s.players[count-1].pieces.map(()=>({node:HOME,history:[]}));s=move(s,0,()=>.3,0);assert.equal(s.round,round);assert.equal(s.phase,[6,12].includes(round)?'augment':'throw');const actors=[];while(s.selection){actors.push(s.selection.player);s=selectAugment(s,s.selection.player,s.selection.offers[0],()=>.3,0);}if([6,12].includes(round))assert.deepEqual(actors,Array.from({length:count},(_,i)=>i));}
+ for(const p of s.players){assert.equal(p.slots.length,3);assert.equal(new Set(p.slots.map(x=>x.id)).size,3);}
+ }
 });
 test('all passive movement bonuses, stacking and +2 cap',()=>{
  for(const id of ['do-plus','gae-plus','geol-plus','launch','late','stack','hero-wind'] as AugmentId[]){
@@ -54,15 +54,16 @@ test('back-do at home can be converted or skipped without a deadlock',()=>{
 test('forfeit while selecting never leaves an eliminated player active; bottom ranks follow forfeit order',()=>{
  let s=createGame(4,true);s=forfeit(s,0);while(s.selection)s=selectAugment(s,s.selection.player,s.selection.offers[0]);assert.equal(s.turn,1);s=forfeit(s,2);s=forfeit(s,3);assert.equal(s.phase,'over');assert.deepEqual(s.ranks,[1,3,2,0]);
 });
-test('augmented two/three/four-player AI games complete with five slots and valid ranks',()=>{
+test('normal and supplied-augment two/three/four-player AI games complete with valid ranks',()=>{
  for(const style of ['normal','augment'] as const)for(const count of [2,3,4] as const)for(let seed=1;seed<=12;seed++){
   let v=seed;const rng=()=>{v=(v*1664525+1013904223)>>>0;return v/4294967296};let s=createGame(count,true,rng,Date.now(),[],style),actions=0;
   while(s.phase!=='over'&&actions++<10000){
-   if(s.selection)s=selectAugment(s,s.selection.player,s.selection.offers[0],rng);
+   if(s.special?.prompt){const q=s.special.prompt,actor=(q.voters||[q.owner]).find(i=>!Object.hasOwn(q.answers||{},i))!;s=resolveAbility(s,actor,q.options[0].value,rng,q.deadline-1);}
+   else if(s.selection)s=selectAugment(s,s.selection.player,s.selection.offers[0],rng);
    else if(s.phase==='throw')s=throwYut(s,rng);
-   else {const slot=s.players[s.turn].slots.find(a=>canUseAugment(s,s.turn,a.id));s=slot?useAugment(s,s.turn,slot.id,rng):legalMoves(s).length?move(s,chooseMove(s,'hard',rng),rng):skipMove(s,rng);}
+   else {const slot=s.players[s.turn].slots.find(a=>canUseAugment(s,s.turn,a.id)&&(!a.id.startsWith('custom-')||a.usedTurn!==s.players[s.turn].baseTurns));s=slot?useAugment(s,s.turn,slot.id,rng):legalMoves(s).length?move(s,chooseMove(s,'hard',rng),rng):skipMove(s,rng);}
   }
-  assert.equal(s.phase,'over');assert.equal(new Set(s.ranks).size,count);for(const p of s.players){assert.ok(p.slots.length<=5);assert.ok(p.slots.filter(x=>definition(x.id)!.hero).length<=1);}
+  assert.equal(s.phase,'over');assert.equal(new Set(s.ranks).size,count);for(const p of s.players){assert.ok(p.slots.length<=10);assert.ok(p.slots.filter(x=>definition(x.id)!.hero).length<=1);}
  }
 });
 test('conflicting defenses cannot be selected, even if an invalid offer is supplied',()=>{

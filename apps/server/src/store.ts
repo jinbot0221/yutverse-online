@@ -59,10 +59,10 @@ export class Store {
  saveRoom(room:{code:string;state:State|null;members:{id:string}[];matchId:string}){
   this.db.exec('BEGIN IMMEDIATE');try{
    this.db.prepare('INSERT INTO rooms VALUES(?,?) ON CONFLICT(code) DO UPDATE SET data=excluded.data').run(room.code,JSON.stringify(room));
-   if(room.state){room.state.choices.forEach((c,sequence)=>{this.db.prepare('INSERT OR IGNORE INTO augment_choices VALUES(?,?,?,?,?)').run(room.matchId,room.members[c.player].id,c.id,c.turn,c.at);this.db.prepare('INSERT OR IGNORE INTO augment_choice_events VALUES(?,?,?,?,?,?)').run(room.matchId,room.members[c.player].id,sequence,c.id,c.turn,c.at);});}
+   if(room.state){room.state.choices.forEach((c,sequence)=>{this.db.prepare('INSERT OR IGNORE INTO augment_choices VALUES(?,?,?,?,?)').run(room.matchId,room.members[c.player].id,c.id,c.round??c.turn,c.at);this.db.prepare('INSERT OR IGNORE INTO augment_choice_events VALUES(?,?,?,?,?,?)').run(room.matchId,room.members[c.player].id,sequence,c.id,c.round??c.turn,c.at);});}
    if(room.state?.phase==='over'){
     const saved=this.db.prepare('INSERT OR IGNORE INTO matches VALUES(?,?,?)').run(room.matchId,new Date().toISOString(),JSON.stringify(room.state));
-    if(saved.changes){room.state.ranks.forEach((player,index)=>{const points=room.members.length===2?[20,0][index]:room.members.length===3?[30,10,0][index]:[40,20,5,0][index];this.db.prepare('INSERT INTO participants VALUES(?,?,?,?,?)').run(room.matchId,room.members[player].id,index+1,points,room.state!.forfeited.includes(player)?1:0);});}
+    if(saved.changes){room.state.ranks.forEach((player,index)=>{const rank=room.state!.special?.placements?.[player]??index+1;const points=room.state!.special?.soleWinner!==undefined&&room.state!.special.soleWinner!==player?0:room.members.length===2?[20,0][rank-1]:room.members.length===3?[30,10,0][rank-1]:[40,20,5,0][rank-1];this.db.prepare('INSERT INTO participants VALUES(?,?,?,?,?)').run(room.matchId,room.members[player].id,rank,points,room.state!.forfeited.includes(player)&&!room.state!.special?.eliminations?.includes(player)?1:0);});}
    }
    this.db.exec('COMMIT');
   }catch(error){this.db.exec('ROLLBACK');throw error;}

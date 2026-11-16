@@ -9,7 +9,7 @@ const fs=require('node:fs');
  try{
   const local=await browser.newContext({viewport:{width:1280,height:1000}});contexts.push(local);const page=await local.newPage();page.on('pageerror',e=>errors.push(e.message));
   await page.goto(base);await page.getByRole('button',{name:'로그인 없이 싱글플레이',exact:true}).click();await page.locator('.mode-menu').getByRole('button',{name:'싱글플레이',exact:true}).click();await page.getByRole('button',{name:'이 동물로 시작하기 ↗',exact:true}).click();await page.getByRole('dialog',{name:'증강 선택'}).waitFor();assert.equal(await page.locator('.augment-picker .card').count(),3);
-  assert.equal(await page.locator('canvas').count(),0);assert.equal(await page.getByRole('button').count(),4);await page.screenshot({path:'/tmp/yutverse-browser/augments.png'});await page.locator('.augment-picker .card').first().click();
+  assert.equal(await page.locator('canvas').count(),0);assert.equal(await page.getByRole('button').count(),5);await page.screenshot({path:'/tmp/yutverse-browser/augments.png'});await page.locator('.augment-picker .card').first().click();
   await page.getByRole('button',{name:'윷 던지기 ↗',exact:true}).waitFor();await page.getByRole('button',{name:'윷 던지기 ↗',exact:true}).click();
   const moves=page.getByRole('button',{name:/말 \d 이동/});if(await moves.count())await moves.first().click();
   await page.reload();await page.locator('.mode-menu').getByRole('button',{name:'싱글플레이',exact:true}).click();await page.locator('canvas').waitFor();assert.ok(await page.evaluate(()=>JSON.parse(localStorage.getItem('yutverse.game')).players[0].slots.length===1));

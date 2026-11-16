@@ -61,3 +61,15 @@ html,body,#root{min-height:100%;width:100%}body:has(.game-shell){overflow:hidden
 @media(prefers-reduced-motion:reduce){.result-pop{animation:none}.pop-ring{animation:none}.result-pop i{display:none}}
 
 .game-style-picker{min-width:0;padding:14px 16px;border:1px solid #7cbcaf55;border-radius:14px;background:#082f32;color:#e5f6ed}.game-style-picker label{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-weight:700}.game-style-picker p{font-size:13px;line-height:1.6;margin:8px 0 0;color:#b8d7cc;overflow-wrap:anywhere}.character-setup>.game-style-picker{margin:16px 0}.room-create .game-style-picker{grid-column:1/-1}.room-create .game-style-picker select{max-width:100%}
+
+.selection-reroll{margin:12px auto;max-width:100%;padding:12px 18px}.augment-catalog select{margin:8px;max-width:100%}.augment-catalog .inspector-cards{margin-top:16px}.augment-catalog p{line-height:1.6}
+
+.ability-prompt select{display:block;max-width:100%;width:100%;margin:12px 0}.ability-controls,.native-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.ability-prompt{max-height:90dvh;overflow:auto}.augment-picker:has(.selection-reroll){overflow-y:auto}
+
+.augment-catalog input{max-width:100%;width:100%;margin:8px 0}.token-kind{font-size:9px;background:#26314e;color:#fff;padding:2px 3px;border-radius:4px}.token-status-list{font-size:13px;line-height:1.8;padding-left:18px}.token-status-list li{overflow-wrap:anywhere}
+
+.ability-map{display:block;width:min(100%,300px);max-height:32dvh;margin:12px auto;border-radius:12px;background:#133e3d}.ability-map [role=button]:focus circle{stroke:white;stroke-width:2}
+
+.identity-mask{background:#061f22}
+
+.token-kind{position:absolute;right:0;top:-10px;line-height:8px;font-size:7px;padding:1px 3px;pointer-events:none}.many-tokens .token-label{max-width:70px}@media(max-width:760px){.many-tokens .token-label{max-width:32px}.many-tokens .token-label .label-name{max-width:9px}}

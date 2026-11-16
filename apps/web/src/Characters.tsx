@@ -1,3 +1,4 @@
+import {AugmentCatalog} from './AugmentCatalog';
 import {GameStylePicker} from './GameStylePicker';
 import {useEffect,useRef} from 'react';
 import {CHARACTERS,character,type CharacterId,type PlayerCount,type Difficulty,type GameStyle} from '@yutverse/engine';
@@ -23,6 +24,6 @@ export function CharacterSelection({gameStyle,onGameStyle,value,onChange,count,o
   <div className="character-intro"><p className="eyebrow">YOUR NEXT ADVENTURE</p><h1>함께할 동물을 골라주세요.</h1><p>고른 동물이 나의 말 4개가 됩니다. 캐릭터마다 능력 차이는 없어요.</p></div>
   <GameStylePicker value={gameStyle} onChange={onGameStyle}/><CharacterChoices value={value} onChange={onChange}/>
   <div className="character-bottom"><div className="selected-hero"><small>함께할 동물</small><strong>{selected.name}</strong><span>{selected.description}</span></div><div className="character-config"><label>참가 인원<select aria-label="시작 인원" value={count} onChange={e=>onCount(Number(e.target.value) as PlayerCount)}><option value={2}>나 + AI 1명 · 2인</option><option value={3}>나 + AI 2명 · 3인</option><option value={4}>나 + AI 3명 · 4인</option></select></label><label>AI 난이도<select aria-label="시작 AI 난이도" value={difficulty} onChange={e=>onDifficulty(e.target.value as Difficulty)}><option value="easy">쉬움</option><option value="normal">보통</option><option value="hard">어려움</option></select></label></div><button className="start-adventure" onClick={onStart}>이 동물로 시작하기 ↗</button></div>
-  <div className="character-secondary">{onHome&&<button onClick={onHome}>시작화면으로</button>}{onProfile&&<button onClick={onProfile}>회원정보</button>}{onRecords&&<button onClick={onRecords}>내 전적</button>}{onAccount&&<button onClick={onAccount}>{accountAction}</button>}<button onClick={onOnline}>친구와 온라인으로 플레이</button>{onCancel&&<button onClick={onCancel}>진행 중인 경기로 돌아가기</button>}</div>
+  <div className="character-secondary"><AugmentCatalog/>{onHome&&<button onClick={onHome}>시작화면으로</button>}{onProfile&&<button onClick={onProfile}>회원정보</button>}{onRecords&&<button onClick={onRecords}>내 전적</button>}{onAccount&&<button onClick={onAccount}>{accountAction}</button>}<button onClick={onOnline}>친구와 온라인으로 플레이</button>{onCancel&&<button onClick={onCancel}>진행 중인 경기로 돌아가기</button>}</div>
  </section>;
 }

@@ -26,7 +26,8 @@
     "test:recovery-browser": "node scripts/recovery-browser-smoke.cjs",
     "test:turn-augments": "node scripts/turn-augments-browser-smoke.cjs",
     "test:family-browser": "node scripts/family-browser-smoke.cjs",
-    "test:game-style": "node scripts/game-style-browser-smoke.cjs"
+    "test:game-style": "node scripts/game-style-browser-smoke.cjs",
+    "test:catalog-browser": "node scripts/catalog-browser-smoke.cjs"
   },
   "devDependencies": {
     "playwright": "^1.65.0",

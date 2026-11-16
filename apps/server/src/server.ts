@@ -5,7 +5,7 @@ import {randomInt,randomUUID,randomBytes,scrypt,timingSafeEqual} from 'node:cryp
 import {promisify} from 'node:util';
 const digestPassword=promisify(scrypt);
 import {resolve} from 'node:path';
-import {createGame,throwYut,move,legalRoutes,selectResult,selectAugment,useAugment,skipMove,expireSelection,forfeit,DEFAULT_CHARACTER,isCharacterId,type CharacterId,type State,type GameStyle} from '@yutverse/engine';
+import {createGame,throwYut,move,legalRoutes,selectResult,selectAugment,rerollAugments,resolveAbility,expireAbility,activateNative,useAugment,skipMove,expireSelection,forfeit,DEFAULT_CHARACTER,isCharacterId,type CharacterId,type State,type GameStyle,position} from '@yutverse/engine';
 import {Store} from './store.ts';
 export type Member={id:string;name:string;ready:boolean;connected:boolean;disconnectedAt:number|null;departed?:boolean;character?:CharacterId};
 export type Room={code:string;matchId:string;capacity:2|3|4;gameStyle?:GameStyle;owner:string;members:Member[];state:State|null;revision:number;actionDeadline:number|null;createdAt:number;title?:string;passwordSalt?:string;passwordHash?:string};
@@ -69,13 +69,16 @@ export function createGameServer(options:Options){
  const publicRoom=(room:Room,userId:string)=>{
   const state=room.state?structuredClone(room.state):null;
   if(state?.selection&&room.members[state.selection.player].id!==userId)state.selection.offers=[];
+  const viewer=room.members.findIndex(m=>m.id===userId),prompt=state?.special?.prompt;if(prompt){if(prompt.id==='custom-bluff-resolve'&&viewer!==prompt.owner){delete prompt.data;if(state?.lastThrow)state.lastThrow.result={name:'비공개',steps:0,extra:false};if(state){state.pendingResults=[];state.throws=0;}}if(prompt.answers){prompt.answers=Object.hasOwn(prompt.answers,viewer)?{[viewer]:prompt.answers[viewer]}:{};}}
+  if(state?.special?.fogUntil&&state.turns<state.special.fogUntil&&viewer!==state.special.fogOwner){const ownNodes=state.players[viewer].pieces.map(p=>p.node);for(let j=0;j<state.players.length;j++)if(j!==viewer)for(const piece of state.players[j].pieces)if(piece.node!=='home'&&piece.node!=='done'&&!ownNodes.some(node=>{const a=position(node),b=position(piece.node);return Math.hypot(a[0]-b[0],a[1]-b[1])<=2.5})){piece.node='hidden';piece.history=[];}}
+  if(state)state.players.forEach((p,j)=>{if(j!==viewer&&p.stats)p.stats=Object.fromEntries(Object.entries(p.stats).filter(([key])=>['hp','ritual','coins','kills','monsterGoal'].includes(key)));});
   const {passwordHash,passwordSalt,...visible}=room;
   return {...visible,title:room.title||`${room.members.find(m=>m.id===room.owner)?.name||'여행자'}의 윷놀이`,locked:Boolean(passwordHash),state,members:room.members.map(({disconnectedAt,...m})=>m),me:room.members.findIndex(m=>m.id===userId)};
  };
  function directory():RoomListEntry[]{return [...rooms.values()].filter(r=>r.state?.phase!=='over').sort((a,b)=>Number(Boolean(a.state))-Number(Boolean(b.state))||b.createdAt-a.createdAt).map(r=>({code:r.code,gameStyle:r.gameStyle??'normal',title:r.title||`${r.members.find(m=>m.id===r.owner)?.name||'여행자'}의 윷놀이`,capacity:r.capacity,count:r.members.filter(m=>!m.departed).length,ownerName:r.members.find(m=>m.id===r.owner)?.name||'여행자',locked:Boolean(r.passwordHash),status:r.state?'playing':r.members.length>=r.capacity?'full':'waiting'}));}
  let directorySnapshot='';function broadcastDirectory(){const list=directory(),snapshot=JSON.stringify(list);if(snapshot!==directorySnapshot){directorySnapshot=snapshot;io.emit('rooms',list);}}
  function publish(room:Room){room.revision++;store.saveRoom(room);for(const member of room.members){const sid=sessions.get(member.id);if(sid&&!member.departed)io.to(sid).emit('room',publicRoom(room,member.id));}broadcastDirectory();}
- function apply(room:Room,state:State){if(state===room.state)return false;room.state=state;room.actionDeadline=['over','augment'].includes(state.phase)?null:now()+turnMs;publish(room);return true;}
+ function apply(room:Room,state:State){if(state===room.state)return false;const before=room.state;for(let i=0;i<room.members.length;i++)if(before?.forfeited.includes(i)&&!state.forfeited.includes(i)&&!state.ranks.includes(i)){room.members[i].departed=false;if(!room.members[i].connected)room.members[i].disconnectedAt=now();}room.state=state;room.actionDeadline=(state.special?.prompt||['over','augment'].includes(state.phase))?null:now()+turnMs;publish(room);return true;}
  function removeLobby(room:Room,id:string){room.members=room.members.filter(m=>m.id!==id);if(!room.members.length){rooms.delete(room.code);store.removeRoom(room.code);broadcastDirectory();return;}if(room.owner===id)room.owner=room.members[0].id;publish(room);}
  function findRoom(id:string){return [...rooms.values()].find(r=>r.members.some(m=>m.id===id&&!m.departed)&&(r.state?.phase!=='over'));}
  for(const raw of store.rooms()){
@@ -92,6 +95,7 @@ export function createGameServer(options:Options){
     if(room.state)apply(room,forfeit(room.state,room.members.findIndex(m=>m.id===member.id),random,now()));else removeLobby(room,member.id);
    }
    if(!room.state)continue;
+   apply(room,expireAbility(room.state,now(),random));
    apply(room,expireSelection(room.state,now(),random));
    if((room.state as State).phase!=='over'&&room.actionDeadline!==null&&now()>=room.actionDeadline)apply(room,forfeit(room.state,room.state.turn,random,now()));
   }
@@ -154,6 +158,9 @@ export function createGameServer(options:Options){
    if(data.revision!==room.revision)throw Error('상태가 갱신되었습니다. 다시 시도하세요.');
    let next=state;
    if(data.kind==='forfeit')next=forfeit(state,index,random,now());
+   else if(data.kind==='resolve-ability'&&typeof data.value==='string')next=resolveAbility(state,index,data.value,random,now());
+   else if(data.kind==='native'&&Number.isInteger(data.index))next=activateNative(state,index,data.index as number,now());
+   else if(data.kind==='reroll-augments')next=rerollAugments(state,index,random,now());
    else if(data.kind==='choose'&&typeof data.id==='string')next=selectAugment(state,index,data.id,random,now());
    else if(index===state.turn){
     if(data.kind==='throw')next=throwYut(state,random,now());

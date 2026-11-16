@@ -4,7 +4,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {io,type Socket} from 'socket.io-client';
-import {chooseMove,chooseRoute,legalMoves,type State} from '@yutverse/engine';
+import {chooseMove,chooseRoute,legalMoves,createGame,type State} from '@yutverse/engine';
 import {createGameServer,type Room} from './server.ts';
 type Reply={ok:boolean;error?:string;room?:Room&{me:number}};
 async function open(dbPath=':memory:',clock={time:1000000}){
@@ -240,11 +240,14 @@ test('legacy accounts can issue a recovery code only with their current password
   const times=f.server.store.db.prepare('SELECT expires_at FROM auth_sessions').all().map(r=>Number(r.expires_at)-Date.now());assert.ok(times.some(t=>t>11*3600000&&t<=12*3600000));assert.ok(times.some(t=>t>29*86400000&&t<=30*86400000));
  }finally{await f.close()}
 });
-test('repeated basic-card choices persist as separate events without duplicating slots',async()=>{
- const f=await open();try{const {clients}=await setupRoom(f,2);await start(clients);await chooseInitial(clients);const room=[...f.server.rooms.values()][0];for(let i=0;i<5;i++){pace(f);room.state!.phase='augment';room.state!.selection={player:0,offers:['shield','boost','back-guard'],queue:[],deadline:f.clock.time+60000};assert.equal((await action(clients[0],'choose',{id:'shield'})).ok,true);}assert.equal(room.state!.players[0].slots.filter(s=>s.id==='shield').length,1);assert.equal(f.server.store.db.prepare('SELECT COUNT(*) AS n FROM augment_choice_events').get()!.n,7);
+test('duplicate basic-card selection is rejected without charging or recording an event',async()=>{
+ const f=await open();try{const {clients}=await setupRoom(f,2);await start(clients);await chooseInitial(clients);const room=[...f.server.rooms.values()][0],owned=room.state!.players[0].slots[0].id;pace(f);room.state!.phase='augment';room.state!.selection={player:0,offers:[owned],queue:[],deadline:f.clock.time+60000};assert.equal((await action(clients[0],'choose',{id:owned})).ok,false);assert.equal(f.server.store.db.prepare('SELECT COUNT(*) AS n FROM augment_choice_events').get()!.n,2);
  }finally{await f.close()}
 });
-
+test('server authorizes candidate rerolls and persists the spent reroll across sync',async()=>{
+ const f=await open();try{const {clients}=await setupRoom(f,2);await start(clients);assert.equal((await action(clients[1],'reroll-augments')).ok,false);const before=await snapshot(clients[0]);assert.equal((await action(clients[0],'reroll-augments')).ok,true);const after=await snapshot(clients[0]);assert.equal(after.state!.selection!.rerolled,true);assert.equal(after.state!.selection!.deadline,before.state!.selection!.deadline);assert.equal((await action(clients[0],'reroll-augments')).ok,false);
+ }finally{await f.close()}
+});
 test('rooms persist the chosen game style and start server-authoritative mode-specific offers',async()=>{
  for(const gameStyle of ['normal','augment'] as const){const f=await open();try{
   const a=await f.connect((await f.session('방장')).token),b=await f.connect((await f.session('참가자')).token);
@@ -257,4 +260,17 @@ test('rooms persist the chosen game style and start server-authoritative mode-sp
   else assert.ok(offers.some(id=>!['back-guard','boost','shield'].includes(id)));
   const saved=f.server.store.db.prepare('SELECT data FROM rooms WHERE code=?').get(made.room!.code) as {data:string};assert.equal(JSON.parse(saved.data).state.gameStyle,gameStyle);
  }finally{await f.close();}}
+});
+
+test('ability prompts enforce owner/voter permissions, secret bluff results and timeout progress',async()=>{
+ const f=await open();try{const {clients}=await setupRoom(f,2);await start(clients);const room=[...f.server.rooms.values()][0];room.state=createGame(2,false,()=>.5,f.clock.time,[],'augment');room.state.players[0].slots=[{id:'custom-bluff',remaining:2}];room.state.players[0].stats={forceReady:1,forced:1};
+ assert.equal((await action(clients[0],'use',{id:'custom-bluff'})).ok,true);assert.equal((await action(clients[1],'resolve-ability',{value:'5'})).ok,false);assert.equal((await action(clients[0],'resolve-ability',{value:'5'})).ok,true);assert.equal((await action(clients[0],'throw')).ok,true);
+ const owner=await snapshot(clients[0]),other=await snapshot(clients[1]);assert.equal((owner.state!.special!.prompt!.data!.actual as {steps:number}).steps,1);assert.equal(other.state!.special!.prompt!.data,undefined);assert.equal(other.state!.lastThrow!.result.name,'비공개');assert.deepEqual(other.state!.pendingResults,[]);assert.equal((await action(clients[0],'resolve-ability',{value:'truth'})).ok,false);assert.equal((await action(clients[1],'resolve-ability',{value:'lie'})).ok,true);assert.equal((await snapshot(clients[1])).state!.turn,1);
+ room.state=createGame(2,false,()=>.5,f.clock.time,[],'augment');room.state.players[0].slots=[{id:'custom-quick-hands',remaining:1}];pace(f);await action(clients[0],'use',{id:'custom-quick-hands'});f.clock.time+=60000;f.server.tick();assert.equal(room.state.special?.prompt,undefined);assert.equal(room.state.players[0].stats!.forceReady,1);
+ }finally{await f.close()}
+});
+test('fog omits distant coordinates and shared winners receive equal permanent rank points',async()=>{
+ const f=await open();try{const {clients}=await setupRoom(f,4);await start(clients);const room=[...f.server.rooms.values()][0];room.state=createGame(4,false,()=>.5,0,[],'augment');room.state.players[0].pieces[0]={node:'o1',history:['home']};room.state.players[1].pieces[0]={node:'o10',history:['home']};room.state.special={fogOwner:1,fogUntil:3};const view=await snapshot(clients[0]);assert.equal(view.state!.players[1].pieces[0].node,'hidden');assert.deepEqual(view.state!.players[1].pieces[0].history,[]);
+ room.state.special={placements:{0:1,1:1,2:3,3:4},wins:[[0,1]]};room.state.ranks=[0,1,2,3];room.state.phase='over';f.server.store.saveRoom(room);const rows=f.server.store.db.prepare('SELECT rank,points FROM participants ORDER BY rank').all();assert.deepEqual(rows.map(r=>[r.rank,r.points]),[[1,40],[1,40],[3,5],[4,0]]);
+ }finally{await f.close()}
 });

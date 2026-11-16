@@ -1,8 +1,11 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createGame,throwYut,selectAugment,candidates,useAugment,moveDestination,move,HOME} from './index.ts';
-test('the three basic cards recharge one slot and keep offering choices after three selections',()=>{
- let s=createGame(2,true,()=>.5,0);for(let i=0;i<5;i++){s.phase='augment';s.selection={player:0,offers:candidates(s.players[0].slots,()=>.5),queue:[],deadline:60000};assert.equal(s.selection.offers.length,3);s=selectAugment(s,0,'shield',()=>.5,0);}assert.equal(s.players[0].slots.length,1);assert.equal(s.players[0].slots[0].remaining,5);assert.equal(s.choices.length,5);
+import {createGame,throwYut,selectAugment,candidates,useAugment,moveDestination,move,HOME,rerollAugments,expireSelection} from './index.ts';
+test('normal cards cannot be reselected or recharged even after being spent',()=>{
+ let s=createGame(2,true,()=>.5,0);s=selectAugment(s,0,'shield',()=>.5,0);s.players[0].slots[0].remaining=0;s.phase='augment';s.selection={player:0,offers:['shield','boost'],queue:[],deadline:60000};assert.equal(selectAugment(s,0,'shield'),s);assert.deepEqual(candidates(s.players[0].slots,()=>.5).sort(),['back-guard','boost']);
+});
+test('candidate reroll belongs to the chooser, is single-use and never extends the deadline',()=>{
+ const s=createGame(2,true,()=>.5,0,[],'augment');assert.equal(rerollAugments(s,1,()=>.2,1),s);const n=rerollAugments(s,0,()=>.2,1);assert.equal(n.selection!.rerolled,true);assert.equal(n.selection!.deadline,s.selection!.deadline);assert.equal(new Set(n.selection!.offers).size,3);assert.equal(rerollAugments(n,0,()=>.5,2),n);assert.equal(rerollAugments(s,0,()=>.5,60000),s);assert.notEqual(expireSelection(n,60000),n);
 });
 test('back-do protection consumes exactly one chance, keeps saved throws and grants a fair replacement',()=>{
  const s=createGame(2);s.players[0].slots=[{id:'back-guard',remaining:1}];s.pendingResults=[{id:1,name:'윷',steps:4,extra:true,extraSettled:true}];s.lastThrow={id:1,player:0,result:s.pendingResults[0]};let i=0;const n=throwYut(s,()=>[.1,.9,.9,.9][i++%4],0);assert.equal(n.phase,'throw');assert.equal(n.turn,0);assert.equal(n.throws,1);assert.equal(n.lastThrow?.guarded,true);assert.equal(n.players[0].slots[0].remaining,0);assert.deepEqual(n.pendingResults,s.pendingResults);assert.equal(n.players[0].baseTurns,1);

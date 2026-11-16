@@ -2,7 +2,7 @@ import {HOME,DONE,position,type State,type MoveEvent} from '@yutverse/engine';
 export type AnimationPlan={before:State;event:MoveEvent;start:number;travelMs:number;captureMs:number;duration:number;reduced:boolean};
 export type MotionToken={player:number;index:number;x:number;z:number};
 export type Pose={x:number;y:number;z:number;scale:number;turn:number;roll:number;kind:'idle'|'move'|'capture'|'finish'};
-export function homePosition(player:number,index:number):[number,number]{const along=-3.45+index*2.3;return player===0?[along,7.3]:player===1?[-7.3,along]:player===2?[along,-7.3]:[7.3,along];}
+export function homePosition(player:number,index:number):[number,number]{const along=-3.45+(index%4)*2.3,out=7.3+Math.floor(index/4)*2.4;return player===0?[along,out]:player===1?[-out,along]:player===2?[along,-out]:[out,along];}
 const clamp=(n:number)=>Math.max(0,Math.min(1,n));
 export function createAnimation(before:State|undefined,after:State|undefined,start:number,reduced=false):AnimationPlan|null{
  const event=after?.lastMove;
