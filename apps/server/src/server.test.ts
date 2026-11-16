@@ -284,3 +284,36 @@ test('online folded boards retain the finish edge and permanently save the compl
 });
 
 test('online manual-card index validation prevents spending another or already spent slot',async()=>{const f=await open();try{const {clients}=await setupRoom(f,2);await start(clients);const room=[...f.server.rooms.values()][0];room.state=createGame(2);room.state.phase='move';room.state.throws=0;room.state.result={name:'도',steps:1,extra:false};room.state.players[0].slots=[{id:'boost',remaining:0},{id:'boost',remaining:1},{id:'boost',remaining:1}];assert.equal((await action(clients[0],'use',{id:'boost',slotIndex:0})).ok,false);assert.equal((await action(clients[1],'use',{id:'boost',slotIndex:1})).ok,false);assert.equal((await action(clients[0],'use',{id:'boost',slotIndex:2})).ok,true);assert.deepEqual(room.state.players[0].slots.map(a=>a.remaining),[0,1,0]);assert.equal((await action(clients[0],'use',{id:'boost',slotIndex:-1})).ok,false);assert.equal((await action(clients[0],'use',{id:'shield',slotIndex:1})).ok,false);}finally{await f.close()}});
+
+test('room chat is authenticated, isolated, validated and independent of game revisions',async()=>{
+ const f=await open();try{
+  const {clients,users}=await setupRoom(f,2);const outsider=await f.connect((await f.session('다른 방')).token);await request(outsider,'create',{capacity:2});
+  const received:unknown[]=[];outsider.on('chat',m=>received.push(m));
+  const before=await snapshot(clients[0]);
+  const event=new Promise<{code:string;message:{name:string;text:string;senderId:string}}>(resolve=>clients[1].once('chat',resolve));
+  assert.equal((await request(clients[0],'chat',{kind:'text',text:'안녕\n반가워요',name:'위조',senderId:'위조'})).ok,true);
+  const message=await event;assert.equal(message.code,before.code);assert.equal(message.message.name,users[0].name);assert.equal(message.message.senderId,users[0].id);assert.equal(message.message.text,'안녕 반가워요');
+  assert.equal((await snapshot(clients[0])).revision,before.revision);assert.deepEqual(received,[]);
+  for(const data of [{kind:'text',text:' '},{kind:'text',text:'가'.repeat(161)},{kind:'reaction',reactionId:'unknown'},{kind:'text',text:1}])assert.equal((await request(clients[0],'chat',data)).ok,false);
+  for(let i=0;i<4;i++)assert.equal((await request(clients[0],'chat',{kind:'reaction',reactionId:'laugh'})).ok,true);
+  assert.equal((await request(clients[0],'chat',{kind:'text',text:'too fast'})).ok,false);
+  const own=await clients[0].timeout(3000).emitWithAck('sync',{}) as {room:{chat:{text:string}[]}};assert.equal(own.room.chat.length,5);
+  const other=await outsider.timeout(3000).emitWithAck('sync',{}) as {room:{chat:unknown[]}};assert.deepEqual(other.room.chat,[]);
+  await request(clients[0],'leave');assert.equal((await request(clients[0],'chat',{kind:'text',text:'나갔어요'})).ok,false);
+ }finally{await f.close()}
+});
+test('chat keeps only 50 messages, restores on reconnect and does not reset a live turn',async()=>{
+ const f=await open();try{
+  const {clients,users}=await setupRoom(f,2);await start(clients);[...f.server.rooms.values()][0].state=createGame(2);const before=await snapshot(clients[0]);
+  for(let i=0;i<52;i++){f.clock.time+=10001; // Advance the fake clock to avoid burst limits.
+   const room=[...f.server.rooms.values()][0];room.actionDeadline=f.clock.time+120000;const deadline=room.actionDeadline,revision=room.revision;
+   assert.equal((await request(clients[0],'chat',{kind:'text',text:`메시지 ${i}`})).ok,true);assert.equal(room.actionDeadline,deadline);assert.equal(room.revision,revision);
+  }
+  const room=[...f.server.rooms.values()][0],deadline=room.actionDeadline,revision=room.revision;
+  const replacement=await f.connect(users[1].token);const restored=await replacement.timeout(3000).emitWithAck('sync',{}) as {room:{chat:{text:string}[]}};
+  assert.equal(restored.room.chat.length,50);assert.equal(restored.room.chat[0].text,'메시지 2');assert.equal(restored.room.chat.at(-1)!.text,'메시지 51');
+  const current=await snapshot(clients[0]);assert.equal(current.actionDeadline,deadline); // Connection changes revision, chat does not.
+  const revisionNow=current.revision;assert.equal(clients[1].connected,false);
+  assert.equal((await request(clients[0],'chat',{kind:'reaction',reactionId:'clap'})).ok,true);assert.equal((await snapshot(clients[0])).revision,revisionNow);assert.ok(revision>=before.revision);
+ }finally{await f.close()}
+});

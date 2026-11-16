@@ -1,3 +1,4 @@
+import {CHAT_REACTIONS,CHAT_LIMIT,type ChatMessage} from '@yutverse/engine';
 import express from 'express';
 import {mountReports} from './reports.ts';
 import {createServer} from 'node:http';
@@ -16,6 +17,7 @@ export function createGameServer(options:Options){
  const store=new Store(options.dbPath),app=express(),http=createServer(app);
  const now=options.now||Date.now,random=options.random||(()=>randomInt(0,0x100000000)/0x100000000),grace=options.graceMs??90000,turnMs=options.turnMs??120000;
  const io=new Server(http,{maxHttpBufferSize:8192,allowRequest:(req,callback)=>{const origin=req.headers.origin;callback(null,!origin||origin===options.webOrigin||origin===`http://${req.headers.host}`||origin===`https://${req.headers.host}`);}});
+ const chats=new Map<string,ChatMessage[]>();
  const rooms=new Map<string,Room>(),sessions=new Map<string,string>(),limits=new Map<string,{count:number;until:number}>();
  const limit=(key:string,max:number,window=10000)=>{const t=now();let l=limits.get(key);if(!l||l.until<=t){l={count:0,until:t+window};limits.set(key,l);}return ++l.count<=max;};
  mountReports(app,store,limit,now);
@@ -75,13 +77,13 @@ export function createGameServer(options:Options){
   if(state?.special?.fogUntil&&state.turns<state.special.fogUntil&&viewer!==state.special.fogOwner){const ownNodes=state.players[viewer].pieces.map(p=>p.node);for(let j=0;j<state.players.length;j++)if(j!==viewer)for(const piece of state.players[j].pieces)if(piece.node!=='home'&&piece.node!=='done'&&!ownNodes.some(node=>{const a=foldedPosition(node,state!.special?.fold),b=foldedPosition(piece.node,state!.special?.fold);return Math.hypot(a[0]-b[0],a[1]-b[1])<=2.5})){piece.node='hidden';piece.history=[];}}
   if(state)state.players.forEach((p,j)=>{if(j!==viewer&&p.stats)p.stats=Object.fromEntries(Object.entries(p.stats).filter(([key])=>['hp','ritual','coins','kills','monsterGoal'].includes(key)));});
   const {passwordHash,passwordSalt,...visible}=room;
-  return {...visible,title:room.title||`${room.members.find(m=>m.id===room.owner)?.name||'여행자'}의 윷놀이`,locked:Boolean(passwordHash),state,members:room.members.map(({disconnectedAt,...m})=>m),me:room.members.findIndex(m=>m.id===userId)};
+  return {...visible,title:room.title||`${room.members.find(m=>m.id===room.owner)?.name||'여행자'}의 윷놀이`,locked:Boolean(passwordHash),chat:chats.get(room.code)||[],state,members:room.members.map(({disconnectedAt,...m})=>m),me:room.members.findIndex(m=>m.id===userId)};
  };
  function directory():RoomListEntry[]{return [...rooms.values()].filter(r=>r.state?.phase!=='over').sort((a,b)=>Number(Boolean(a.state))-Number(Boolean(b.state))||b.createdAt-a.createdAt).map(r=>({code:r.code,gameStyle:r.gameStyle??'normal',title:r.title||`${r.members.find(m=>m.id===r.owner)?.name||'여행자'}의 윷놀이`,capacity:r.capacity,count:r.members.filter(m=>!m.departed).length,ownerName:r.members.find(m=>m.id===r.owner)?.name||'여행자',locked:Boolean(r.passwordHash),status:r.state?'playing':r.members.length>=r.capacity?'full':'waiting'}));}
  let directorySnapshot='';function broadcastDirectory(){const list=directory(),snapshot=JSON.stringify(list);if(snapshot!==directorySnapshot){directorySnapshot=snapshot;io.emit('rooms',list);}}
  function publish(room:Room){room.revision++;store.saveRoom(room);for(const member of room.members){const sid=sessions.get(member.id);if(sid&&!member.departed)io.to(sid).emit('room',publicRoom(room,member.id));}broadcastDirectory();}
  function apply(room:Room,state:State){if(state===room.state)return false;const before=room.state;for(let i=0;i<room.members.length;i++)if(before?.forfeited.includes(i)&&!state.forfeited.includes(i)&&!state.ranks.includes(i)){room.members[i].departed=false;if(!room.members[i].connected)room.members[i].disconnectedAt=now();}room.state=state;room.actionDeadline=(state.special?.prompt||['over','augment'].includes(state.phase))?null:now()+turnMs;publish(room);return true;}
- function removeLobby(room:Room,id:string){room.members=room.members.filter(m=>m.id!==id);if(!room.members.length){rooms.delete(room.code);store.removeRoom(room.code);broadcastDirectory();return;}if(room.owner===id)room.owner=room.members[0].id;publish(room);}
+ function removeLobby(room:Room,id:string){room.members=room.members.filter(m=>m.id!==id);if(!room.members.length){rooms.delete(room.code);chats.delete(room.code);store.removeRoom(room.code);broadcastDirectory();return;}if(room.owner===id)room.owner=room.members[0].id;publish(room);}
  function findRoom(id:string){return [...rooms.values()].find(r=>r.members.some(m=>m.id===id&&!m.departed)&&(r.state?.phase!=='over'));}
  for(const raw of store.rooms()){
   const r=raw as Room;for(const m of r.members){m.connected=false;m.disconnectedAt=now();}
@@ -91,7 +93,7 @@ export function createGameServer(options:Options){
   for(const [key,l] of limits)if(l.until<now())limits.delete(key);
   for(const room of [...rooms.values()]){
    if(room.state?.phase==='over'){
-    if(room.members.every(m=>!m.connected)&&now()-room.createdAt>300000){rooms.delete(room.code);store.removeRoom(room.code);}continue;
+    if(room.members.every(m=>!m.connected)&&now()-room.createdAt>300000){rooms.delete(room.code);chats.delete(room.code);store.removeRoom(room.code);}continue;
    }
    for(const member of [...room.members])if(!member.connected&&member.disconnectedAt!==null&&now()-member.disconnectedAt>=grace){
     if(room.state)apply(room,forfeit(room.state,room.members.findIndex(m=>m.id===member.id),random,now()));else removeLobby(room,member.id);
@@ -150,6 +152,21 @@ export function createGameServer(options:Options){
    if(rooms.get(room.code)!==room||room.state||room.members.length>=room.capacity)throw Error('참가할 수 없는 방입니다.');
    for(const old of rooms.values())if(old.state?.phase==='over'){const member=old.members.find(m=>m.id===user.id);if(member)member.departed=true;}
    room.members.push({...user,character:isCharacterId(data.character)?data.character:DEFAULT_CHARACTER,ready:false,connected:true,disconnectedAt:null});publish(room);return {room:publicRoom(room,user.id)};
+  });
+  handle('chat',data=>{
+   const room=roomFor();
+   let text:string,reactionId:string|undefined;
+   if(data.kind==='reaction'){
+    const reaction=CHAT_REACTIONS.find(r=>r.id===data.reactionId);if(!reaction)throw Error('사용할 수 없는 이모티콘입니다.');
+    text=`${reaction.emoji} ${reaction.label}`;reactionId=reaction.id;
+   }else if(data.kind==='text'&&typeof data.text==='string'){
+    text=data.text.replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g,' ').trim();
+    if(!text||Array.from(text).length>160||data.text.length>640)throw Error('채팅은 1~160자로 입력하세요.');
+   }else throw Error('채팅 형식이 잘못되었습니다.');
+   if(!limit(`chat:${user.id}`,5,10000))throw Error('채팅은 10초에 5번까지 보낼 수 있습니다.');
+   const message:ChatMessage={id:randomUUID(),senderId:user.id,name:user.name,kind:reactionId?'reaction':'text',text,reactionId,at:now()};
+   chats.set(room.code,[...(chats.get(room.code)||[]),message].slice(-CHAT_LIMIT));
+   for(const member of room.members){const sid=sessions.get(member.id);if(sid&&!member.departed)io.to(sid).emit('chat',{code:room.code,message});}
   });
   handle('sync',()=>{const room=roomFor();return {room:publicRoom(room,user.id)};});
   handle('character',data=>{const room=roomFor();if(room.state)throw Error('경기 중에는 캐릭터를 바꿀 수 없습니다.');if(!isCharacterId(data.character))throw Error('선택할 수 없는 캐릭터입니다.');const member=room.members.find(m=>m.id===user.id)!;member.character=data.character;member.ready=false;publish(room);return {room:publicRoom(room,user.id)};});

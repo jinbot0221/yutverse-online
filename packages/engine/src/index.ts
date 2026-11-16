@@ -1,3 +1,4 @@
+export * from './chat.ts';
 import {sameCell,cellKey} from './fold.ts';
 export * from './fold.ts';
 export * from './dilemma.ts';
