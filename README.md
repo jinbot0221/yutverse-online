@@ -158,3 +158,11 @@ npm run test:observer-browser
 ```sh
 npm run test:target-effects
 ```
+
+## 증강 효과 검증
+
+92종별 실제 효과 시나리오와 변환·HP·상호작용 회귀 검사를 추가했습니다. 발견한 문제와 검증 범위는 [증강 검증 기록](AUGMENT_AUDIT.md)을 확인하세요. 체력 특성 획득 시 플레이어 목록에서 HP를 바로 확인할 수 있고, 플레이어 정보 창에서 변환 종류와 능력도 확인합니다.
+
+```sh
+npm run test:transform-hp
+```

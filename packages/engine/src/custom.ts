@@ -1,7 +1,7 @@
 import {recordTargetEffect,type TargetEffect} from './target-effects.ts';
 import {foldedPosition,sameCell,cellKey} from './fold.ts';
 import {dilemmaReward,type DilemmaChoice} from './dilemma.ts';
-import {destination,position,type State,type Piece,type Result} from './index.ts';
+import {destination,moveDestination,position,type State,type Piece,type Result} from './index.ts';
 import {REQUESTED_AUGMENTS} from './requested-augments.ts';
 export type Prompt={owner:number;id:string;title:string;options:{value:string;label:string}[];deadline:number;step?:string;data?:Record<string,unknown>;answers?:Record<number,string>;voters?:number[]};
 export type SpecialState={targetHistory?:TargetEffect[];targetSerial?:number;checkpoint?:boolean;acquireQueue?:{player:number;id:string}[];prompt?:Prompt;endTurn?:boolean;consumeResult?:boolean;rotation?:number;fold?:'horizontal'|'vertical';catForced?:boolean;blocked?:string[];delivered?:Record<number,string>;reaper?:{owner:number;node:string};hazards?:{owner:number;node:string;kind:'poop'|'trap'|'reward'|'garlic'}[];fogUntil?:number;fogOwner?:number;doubleTurns?:boolean;extraTurn?:boolean;linkedOnly?:number[];linked?:Record<number,number>;placements?:Record<number,number>;fixedRanks?:Record<number,number>;eliminations?:number[];lossGroups?:number[][];soleWinner?:number;wins?:number[][];attackHp?:boolean;mindGame?:{owner:number;round:number;offers:string[];choices:Record<number,string>};duels?:{owner:number;target:number;end:number;done:number}[]};
@@ -21,15 +21,15 @@ function complete(s:State,i:number,count:number){const home=s.players[i].pieces.
 export function winSpecial(s:State,i:number){if(!active(s,i)||(s.special?.linkedOnly?.includes(i)&&active(s,s.special.linked?.[i]??-1)))return;const sp=special(s),group=[i];for(let n=0;n<group.length;n++)for(const [f,t] of Object.entries(sp.linked||{}))if(t===group[n]&&active(s,Number(f))&&!group.includes(Number(f)))group.push(Number(f));const occupied=new Set(Object.values({...sp.fixedRanks,...sp.placements}));for(const old of sp.wins||[]){const rank=sp.placements?.[old[0]]||1;for(let offset=0;offset<old.length;offset++)occupied.add(rank+offset);}const rank=Array.from({length:s.players.length},(_,n)=>n+1).find(n=>!occupied.has(n))||s.ranks.length+1;for(const n of group){(sp.placements??={})[n]=rank;s.ranks.push(n);log(s,`${s.players[n].name}: 특수 승리 · ${rank}위`)}(sp.wins??=[]).push(group);}
 export function loseSpecial(s:State,i:number){if(!active(s,i))return;s.forfeited.push(i);(special(s).eliminations??=[]).push(i);const losses=[i];log(s,`${s.players[i].name}: 증강 효과로 탈락`);for(let n=0;n<losses.length;n++)for(const [f,t] of Object.entries(s.special?.linked||{}))if(t===losses[n]&&s.special?.linkedOnly?.includes(Number(f))&&active(s,Number(f))){s.forfeited.push(Number(f));losses.push(Number(f));(special(s).eliminations??=[]).push(Number(f));}if(losses.length>1)(special(s).lossGroups??=[]).push(losses);}
 export function killSpecial(s:State,attacker:number,victim:number,index:number):boolean{
- const p=s.players[victim]?.pieces[index];if(!p||p.node==='home'||p.node==='done'||(attacker!==victim&&(own(s,attacker,'peace')||own(s,victim,'peace'))))return false;
+ const p=s.players[victim]?.pieces[index];if(!p||!active(s,victim)||p.node==='home'||p.node==='done'||(attacker!==victim&&(own(s,attacker,'peace')||own(s,victim,'peace'))))return false;
  if(p.shield){p.shield--;return false;}if(p.kind==='monster'){stats(s,victim).monsterGoal=(stats(s,victim).monsterGoal||12)+1;return false;}
  if(p.kind==='queen'&&(p.life||1)>1){p.life!--;return false;}
  if(p.kind==='queen'||p.kind==='domain')loseSpecial(s,victim);
- for(const op of s.players)for(const t of op.pieces)if(t.swallowedBy===`${victim}:${index}`){delete t.swallowedBy;t.node='home';t.history=[];}const to=p.revive||'home';const from=p.node;p.node=to;p.history=[];delete p.revive;delete p.spirit;delete p.riding;
+ for(const op of s.players)for(const t of op.pieces)if(t.swallowedBy===`${victim}:${index}`){delete t.swallowedBy;t.node='home';t.history=[];}const to=p.revive||'home';const from=p.node;p.node=to;p.history=[];delete p.revive;delete p.spirit;delete p.riding;delete p.absorbed;
  if(attacker>=0){stats(s,attacker).kills=(stats(s,attacker).kills||0)+1;stats(s,victim)[`caught-${attacker}`]=1;
  if(attacker!==victim&&own(s,attacker,'coup')&&(stats(s,attacker).coupKills=(stats(s,attacker).coupKills||0)+1)>=4)winSpecial(s,attacker);
  if(attacker!==victim&&own(s,attacker,'monster')&&stats(s,attacker).kills>=(stats(s,attacker).monsterGoal||12))winSpecial(s,attacker);
- if(attacker!==victim&&own(s,attacker,'murder')){stats(s,victim).hp=(stats(s,victim).hp??4)-1;if(stats(s,victim).hp<=0)loseSpecial(s,victim);}
+ if(attacker!==victim&&own(s,attacker,'murder')){const before=stats(s,victim).hp??4;stats(s,victim).hp=Math.max(0,before-1);log(s,`${s.players[attacker].name} → ${s.players[victim].name}: 체력 ${before} → ${stats(s,victim).hp} / 4`);if(stats(s,victim).hp===0)loseSpecial(s,victim);}
  }
  for(let j=0;j<s.players.length;j++)if(j!==s.turn&&j!==victim&&own(s,j,'fisher')){const st=stats(s,j);st.fisher=(st.fisher||0)+1;if(st.fisher%2===0)addResult(s,j,2,'개');}
  if(s.lastMove)s.lastMove.captures.push({player:victim,indices:[index],from,to});return true;
@@ -70,7 +70,7 @@ export function acquireCustom(s:State,i:number,id:string,rng:()=>number,now:numb
  if(key==='star')p.pieces=Array.from({length:8},()=>({node:'home',history:[],kind:'star',strength:1}));
  if(key==='monster'){p.pieces=[{node:'home',history:[],kind:'monster'}];st.monsterGoal=12;}
  if(key==='kim'){p.pieces[0].kind='kim';st.kimEnd=p.baseTurns+6;}
- if(key==='queen'){p.pieces[0]={node:'o10',history:['home'],kind:'queen',life:1};st.queenThrows=0;}
+ if(key==='queen'){p.pieces[0]={node:'o10',history:['home',...Array.from({length:9},(_,j)=>`o${j+1}`)],kind:'queen',life:1};st.queenThrows=0;}
  if(key==='adventurer'){['goblin','vanguard','cannon','pawn'].forEach((kind,j)=>{if(p.pieces[j])p.pieces[j].kind=kind});st.adventureEnd=(s.round||1)+8;}
  if(key==='bear'){sp.hazards??=[];const placed=[...nodes];for(let n=placed.length-1;n>0;n--){const j=Math.floor(rng()*(n+1));[placed[n],placed[j]]=[placed[j],placed[n]];}for(const node of placed.slice(0,4))sp.hazards.push({owner:i,node,kind:'garlic'});}
  if(key==='party'){sp.hazards??=[];const chosen=[...nodes].sort(()=>rng()-.5).slice(0,10);chosen.forEach((node,j)=>sp.hazards!.push({owner:i,node,kind:j<6?'trap':'reward'}));}
@@ -82,18 +82,25 @@ export function acquireCustom(s:State,i:number,id:string,rng:()=>number,now:numb
  if(key==='reversal'){const pool=REQUESTED_AUGMENTS.filter(a=>a.stage!=='start'&&(s.players.length>=3||a.id!=='custom-bronze')&&a.id!==id&&!p.slots.some(slot=>slot.id===a.id));for(let j=0;j<4&&pool.length;j++){const a=pool.splice(Math.floor(rng()*pool.length),1)[0];p.slots.push({id:a.id as `custom-${string}`,remaining:a.charges});s.choices.push({player:i,id:a.id as `custom-${string}`,turn:p.baseTurns,round:s.round||1,at:now});(sp.acquireQueue??=[]).push({player:i,id:a.id});}}
  if(key==='objection'){p.slots=p.slots.filter(a=>a.id!==id);(sp.blocked??=[]).push(id);}
 }
+export function movementLocked(s:State,i:number,index:number){const p=s.players[i]?.pieces[index];if(!p||p.swallowedBy)return true;return s.players[i].pieces.some((t,j)=>(j===index||(p.node!=='home'&&sameCell(s,t.node,p.node)))&&(t.kind==='domain'||Boolean(t.frozenUntil&&(s.round||1)<t.frozenUntil)));}
+function hypnosisOptions(s:State,i:number){return s.players.flatMap((_,owner)=>owner!==i&&active(s,owner)?pieces(s,owner,p=>Boolean(moveDestination({...s,turn:owner},s.players[owner].pieces.indexOf(p)))):[]);}
+function movableBoard(s:State,i:number,p:Piece){return nodes.includes(p.node)&&!movementLocked(s,i,s.players[i].pieces.indexOf(p));}
 export function manualOptions(s:State,i:number,id:string):boolean{
  if(s.special?.prompt||!active(s,i)||s.turn!==i||!['throw','move'].includes(s.phase))return false;const key=id.slice(7),p=s.players[i];
  if(hasCustomButton(id)&&s.players[i].slots.find(a=>a.id===id)?.usedTurn===s.players[i].baseTurns)return false;
- if(key==='hypnosis')return s.phase==='move'&&Boolean(s.result);
+ if(key==='hypnosis')return s.phase==='move'&&Boolean(s.result)&&hypnosisOptions(s,i).length>0;
  if(['goblin','vanguard','zombie','cannon','pawn','pelican'].includes(key))return p.pieces.some(x=>!x.kind&&x.node!=='done');
  if(key==='marathon')return p.pieces.some(x=>!x.kind&&x.node==='home');
- if(['holy-shield','bonfire','assassin','bomb','domain','sacrifice','time-travel','flick'].includes(key))return p.pieces.some(x=>nodes.includes(x.node));
- if(key==='truck')return p.pieces.some(x=>nodes.includes(x.node)&&p.pieces.filter(y=>sameCell(s,y.node,x.node)).length>=2);
+ if(['time-travel','flick'].includes(key))return p.pieces.some(x=>movableBoard(s,i,x)&&(key!=='time-travel'||x.history.length>0));
+ if(key==='sacrifice')return p.pieces.some(x=>nodes.includes(x.node)&&x.kind!=='monster');
+ if(['holy-shield','bonfire','assassin','bomb','domain'].includes(key))return p.pieces.some(x=>nodes.includes(x.node));
+ if(key==='truck')return p.pieces.some(x=>movableBoard(s,i,x)&&p.pieces.filter(y=>sameCell(s,y.node,x.node)).length>=2);
  if(key==='fusion')return p.pieces.some(x=>nodes.includes(x.node)&&p.pieces.filter(y=>sameCell(s,y.node,x.node)).length>=3);
  if(['quick-hands','loner','bluff'].includes(key))return s.phase==='throw';
  if(key==='flip')return s.phase==='move'&&Boolean(s.result?.sticks?.length);
  if(['loan','chalice','sniper'].includes(key))return s.phase==='throw'&&s.throws>0;
+ if(key==='wait')return targets(s,i).some(t=>s.players[Number(t.value)].pieces.some(p=>nodes.includes(p.node)));
+ if(key==='illusion')return targets(s,i).some(t=>s.players[Number(t.value)].slots.some(slot=>slot.remaining!==0));
  if(key==='necromancer')return Boolean(s.forfeited.length);
  if(key==='cancel-wins')return Boolean(s.ranks.length);
  return true;
@@ -102,13 +109,15 @@ export function startCustom(s:State,i:number,id:string,rng:()=>number,now:number
  const key=id.slice(7),sp=special(s),p=s.players[i],st=stats(s,i);const used=p.slots.find(a=>a.id===id);if(used)used.usedTurn=p.baseTurns;const onBoard=(piece:Piece)=>nodes.includes(piece.node);
  if(key==='dog-pig')ask(s,i,id,'이번 던지기 결과를 고르세요',[{value:'1',label:'도'},{value:'2',label:'개'}],now);
  else if(key==='hitchhike')ask(s,i,id,'상대 말을 만났을 때 행동을 고르세요',[{value:'0',label:'잡기'},{value:'1',label:'무임승차'}],now);
- else if(key==='hypnosis')ask(s,i,id,'내 결과로 움직일 상대 말을 고르세요',s.players.flatMap((_,j)=>j!==i?pieces(s,j,t=>t.node!=='done'&&Boolean(destination(t,s.result!.steps))):[]),now);
+ else if(key==='hypnosis')ask(s,i,id,'내 결과로 움직일 상대 말을 고르세요',hypnosisOptions(s,i),now);
  else if(key==='mutual'){const owner=s.players.findIndex((_,j)=>j!==i&&own(s,j,'mutual'));if(owner>=0){addResult(s,i,2,'개');stats(s,owner)['owed-3']=(stats(s,owner)['owed-3']||0)+1;st.mutualUsed=p.baseTurns;}}
  else if(['goblin','vanguard','zombie','cannon','pawn','pelican'].includes(key))promptPiece(s,i,id,now,x=>!x.kind&&x.node!=='done');
  else if(key==='marathon')promptPiece(s,i,id,now,x=>!x.kind&&x.node==='home');
- else if(['holy-shield','bonfire','assassin','bomb','domain','sacrifice','time-travel','flick'].includes(key))promptPiece(s,i,id,now,onBoard);
- else if(['truck','fusion'].includes(key))promptPiece(s,i,id,now,x=>onBoard(x)&&p.pieces.filter(y=>sameCell(s,y.node,x.node)).length>=(key==='truck'?2:3));
- else if(['hit-player','wait','illusion'].includes(key))ask(s,i,id,'상대 플레이어를 고르세요',targets(s,i),now);
+ else if(['time-travel','flick'].includes(key))promptPiece(s,i,id,now,p=>movableBoard(s,i,p)&&(key!=='time-travel'||p.history.length>0));
+ else if(key==='sacrifice')promptPiece(s,i,id,now,p=>onBoard(p)&&p.kind!=='monster');
+ else if(['holy-shield','bonfire','assassin','bomb','domain'].includes(key))promptPiece(s,i,id,now,onBoard);
+ else if(['truck','fusion'].includes(key))promptPiece(s,i,id,now,x=>onBoard(x)&&(key!=='truck'||movableBoard(s,i,x))&&p.pieces.filter(y=>sameCell(s,y.node,x.node)).length>=(key==='truck'?2:3));
+ else if(['hit-player','wait','illusion'].includes(key))ask(s,i,id,'상대 플레이어를 고르세요',targets(s,i).filter(t=>key==='wait'?s.players[Number(t.value)].pieces.some(p=>onBoard(p)):key==='illusion'?s.players[Number(t.value)].slots.some(a=>a.remaining!==0):true),now);
  else if(key==='necromancer')ask(s,i,id,'부활시킬 플레이어를 고르세요',s.forfeited.map(j=>({value:String(j),label:s.players[j].name})),now);
  else if(key==='sniper')ask(s,i,id,'다음 내 차례에 공격할 칸을 고르세요',nodes.map(node=>({value:node,label:node})),now);
  else if(key==='quick-hands'||key==='bluff')ask(s,i,id,'다음 결과를 고르세요',['빽도','도','개','걸','윷','모'].map((label,j)=>({value:String([-1,1,2,3,4,5][j]),label})),now);
@@ -126,7 +135,7 @@ export function startCustom(s:State,i:number,id:string,rng:()=>number,now:number
  else if(key==='cancel-wins'){take(s,i,id);s.ranks=[];sp.placements={};sp.fixedRanks={};sp.wins=[];s.players.forEach(op=>op.pieces.forEach(piece=>{if(piece.node==='done'){piece.node='home';piece.history=[]}}));}
  else if(key==='go'){const groups=[...new Set(p.pieces.map(x=>x.node).filter(n=>nodes.includes(n)))];let killed=0;for(let a=0;a<groups.length;a++)for(let b=a+1;b<groups.length;b++){const u=foldedPosition(groups[a],s.special?.fold),v=foldedPosition(groups[b],s.special?.fold);s.players.forEach((op,j)=>{if(j!==i)op.pieces.forEach((piece,k)=>{if(!onBoard(piece))return;const z=foldedPosition(piece.node,s.special?.fold),cross=(v[0]-u[0])*(z[1]-u[1])-(v[1]-u[1])*(z[0]-u[0]);if(Math.abs(cross)<.08&&(z[0]-u[0])*(z[0]-v[0])+(z[1]-u[1])*(z[1]-v[1])<0&&killSpecial(s,i,j,k))killed++;})});}if(killed){take(s,i,id);s.throws+=killed;}}
 }
-function shiftGroup(s:State,i:number,j:number,node:string){const origin=s.players[i].pieces[j].node;s.lastMove={id:(s.lastMove?.id||0)+1,player:i,indices:s.players[i].pieces.flatMap((p,k)=>k===j||(origin!=='home'&&sameCell(s,p.node,origin))?[k]:[]),path:[origin,node],captures:[]};for(const [k,p] of s.players[i].pieces.entries())if(k===j||(origin!=='home'&&sameCell(s,p.node,origin))){p.history.push(p.node);p.node=node;}}
+function shiftGroup(s:State,i:number,j:number,node:string,history?:string[]){const origin=s.players[i].pieces[j].node;s.lastMove={id:(s.lastMove?.id||0)+1,player:i,indices:s.players[i].pieces.flatMap((p,k)=>k===j||(origin!=='home'&&sameCell(s,p.node,origin))?[k]:[]),path:[origin,node],captures:[]};for(const [k,p] of s.players[i].pieces.entries())if(k===j||(origin!=='home'&&sameCell(s,p.node,origin))){const target=transformTarget(s,i,k,{node,history:history?[...history]:[...p.history,p.node]});p.history=[...target.history];p.node=target.node;delete p.riding;}s.lastMove.indices=s.lastMove.indices.filter(k=>s.players[i].pieces[k].node===node);}
 function rotatePieces(s:State,turns:number){for(const op of s.players)for(const p of op.pieces)if(nodes.includes(p.node)){let [x,y]=position(p.node);for(let j=0;j<turns;j++)[x,y]=[-y,x];p.node=nearest(x,y);p.history=[];}}
 function nearest(x:number,y:number){return [...nodes].sort((a,b)=>{const u=position(a),v=position(b);return Math.hypot(u[0]-x,u[1]-y)-Math.hypot(v[0]-x,v[1]-y)})[0]}
 function ray(s:State,from:string,to:string){const a=foldedPosition(from,s.special?.fold),b=foldedPosition(to,s.special?.fold),dx=b[0]-a[0],dy=b[1]-a[1];if(Math.hypot(dx,dy)<.05)return [];if(Math.abs(dx)>.05&&Math.abs(dy)>.05&&Math.abs(Math.abs(dx)-Math.abs(dy))>.05)return [];return nodes.filter(n=>{const p=foldedPosition(n,s.special?.fold),vx=p[0]-a[0],vy=p[1]-a[1];return n!==from&&Math.abs(dx*vy-dy*vx)<.09&&dx*vx+dy*vy>0}).sort((u,v)=>{const p=foldedPosition(u,s.special?.fold),q=foldedPosition(v,s.special?.fold);return Math.hypot(p[0]-a[0],p[1]-a[1])-Math.hypot(q[0]-a[0],q[1]-a[1])}).filter((node,index,list)=>list.findIndex(other=>sameCell(s,node,other))===index).map(node=>sameCell(s,node,to)?to:node)}
@@ -139,13 +148,13 @@ export function resolveCustom(s:State,actor:number,value:string,rng:()=>number,n
  if(key==='dilemma'){const pair=q.voters,choices=pair.map(j=>q.answers![j]);for(let j=0;j<2;j++){const reward=dilemmaReward(choices[j] as DilemmaChoice,choices[1-j] as DilemmaChoice);recordTargetEffect(s,i,pair[j],id,`죄수의 딜레마 · ${choices[j]==='cooperate'?'협력':'배신'} · 추가 던지기 ${reward}회`);s.throws+=s.turn===pair[j]?reward:0;stats(s,pair[j]).owedThrows=(stats(s,pair[j]).owedThrows||0)+(s.turn===pair[j]?0:reward);}log(s,`죄수의 딜레마: ${pair.map((player,j)=>`${s.players[player].name} ${choices[j]==='cooperate'?'협력':'배신'} · 추가 던지기 ${dilemmaReward(choices[j] as DilemmaChoice,choices[1-j] as DilemmaChoice)}회`).join(' / ')}`);take(s,i,id);}
  if(key==='bluff-resolve'){const actual=q.data!.actual as Result,declared=q.data!.declared as number,truth=actual.steps===declared,challenged=Object.values(q.answers).includes('lie');if(truth){for(const [v,a] of Object.entries(q.answers))if(a==='lie'){stats(s,Number(v)).skip=(stats(s,Number(v)).skip||0)+1;recordTargetEffect(s,i,Number(v),'custom-bluff','블러핑 · 진실을 거짓으로 판단해 차례 1회 쉬기',{untilBaseTurn:s.players[Number(v)].baseTurns+(stats(s,Number(v)).skip||0)});}s.pendingResults=[...(s.pendingResults||[]),actual];}else if(!challenged){s.throws+=Number(declared>=4)-Number(actual.extra);s.pendingResults=[...(s.pendingResults||[]),{...actual,steps:declared,name:declared===-1?'빽도':['','도','개','걸','윷','모'][declared],extra:declared>=4}];}if(truth||!challenged){const final=s.pendingResults?.at(-1);if(final)afterCustomThrow(s,final,rng,now);}if(!truth&&challenged&&actual.extra)s.throws=Math.max(0,s.throws-1);if(s.throws===0)s.phase='move';s.result=s.pendingResults?.[0]??null;}
  return true;}
- if(key==='native'){const index=Number(q.data!.index),piece=s.players[i].pieces[index],to=piece.kind==='goblin'?destination(piece,value==='back'?-1:1):{node:value,history:[...piece.history,piece.node]};if(to){const original=piece.node;shiftGroup(s,i,index,to.node);piece.nativeUsed=s.players[i].baseTurns;let captured=false;s.players.forEach((op,j)=>{if(j!==i&&op.pieces.some(p=>sameCell(s,p.node,to.node))&&captureCustom(s,i,index,j,to.node)>0)captured=true;});if(captured)s.throws++;customLanding(s,i,index,original,captured,to.node==='done'?1:0);sp.consumeResult=true;}}
+ if(key==='native'){const index=Number(q.data!.index),piece=s.players[i].pieces[index],raw=piece.kind==='goblin'?destination(piece,value==='back'?-1:1):{node:value,history:[...piece.history,piece.node]},to=raw?transformTarget(s,i,index,raw):null;if(to){const original=piece.node;shiftGroup(s,i,index,to.node,to.history);piece.nativeUsed=s.players[i].baseTurns;let captured=false;s.players.forEach((op,j)=>{if(j!==i&&op.pieces.some(p=>sameCell(s,p.node,to.node))&&captureCustom(s,i,index,j,to.node)>0)captured=true;});if(captured)s.throws++;customLanding(s,i,index,original,captured,to.node==='done'?(s.lastMove?.indices.filter(j=>s.players[i].pieces[j].node==='done').length||0):0);sp.consumeResult=true;}}
  else if(key==='dog-pig')st.dogChoice=Number(value);
  else if(key==='hitchhike')st.ride=Number(value);
- else if(key==='hypnosis'){const [owner,index]=value.split(':').map(Number),piece=s.players[owner].pieces[index],to=destination(piece,s.result!.steps);if(to){recordTargetEffect(s,i,owner,id,`최면술 · 상대 말 ${index+1} 이동`);shiftGroup(s,owner,index,to.node);s.players.forEach((op,j)=>{if(j!==owner&&op.pieces.some(t=>sameCell(s,t.node,to.node)))captureCustom(s,owner,index,j,to.node)});sp.consumeResult=true;}}
+ else if(key==='hypnosis'){const [owner,index]=value.split(':').map(Number),piece=s.players[owner].pieces[index],to=moveDestination({...s,turn:owner},index);if(to){recordTargetEffect(s,i,owner,id,`최면술 · 상대 말 ${index+1} 이동`);const original=piece.node;shiftGroup(s,owner,index,to.node,to.history);let captured=false;if(nodes.includes(to.node))s.players.forEach((op,j)=>{if(j!==owner&&active(s,j)&&op.pieces.some(t=>sameCell(s,t.node,to.node))&&captureCustom(s,owner,index,j,to.node)>0)captured=true;});if(captured)s.throws++;customLanding(s,owner,index,original,captured,to.node==='done'?(s.lastMove?.indices.filter(j=>s.players[owner].pieces[j].node==='done').length||0):0);sp.consumeResult=true;}}
  else if(key==='fold'){sp.fold=value as 'horizontal'|'vertical';log(s,`${s.players[i].name}: 윷판을 ${value==='horizontal'?'가로':'세로'}로 접었습니다. 진행 경로와 완주 조건은 유지됩니다.`);}
  else if(key==='spin'){if(value==='spin'){const turns=1+Math.floor(rng()*3);rotatePieces(s,turns);sp.rotation=(sp.rotation||0)+turns;}}
- else if(key==='leech'){const target=Number(value),piece=s.players[i].pieces.findIndex(p=>p.node==='home');if(!canLink(s,i,target))return false;if(piece>=0){const newIndex=s.players[target].pieces.length;s.players[target].pieces.push(s.players[i].pieces.splice(piece,1)[0]);for(const p of s.players)for(const t of p.pieces)for(const field of ['riding','swallowedBy'] as const){const key=t[field];if(!key)continue;const [owner,index]=key.split(':').map(Number);if(owner===i)t[field]=index===piece?`${target}:${newIndex}`:`${owner}:${index>piece?index-1:index}`;}}(sp.linked??={})[i]=target;(sp.linkedOnly??=[]).push(i);recordTargetEffect(s,i,target,id,'거머리 · 승패 연결',{kind:'link'});}
+ else if(key==='leech'){const target=Number(value);let piece=s.players[i].pieces.findIndex(p=>p.node==='home');if(piece<0)piece=s.players[i].pieces.findIndex(p=>p.node!=='done'&&!p.swallowedBy);if(!canLink(s,i,target))return false;if(piece>=0){const newIndex=s.players[target].pieces.length;s.players[target].pieces.push(s.players[i].pieces.splice(piece,1)[0]);for(const p of s.players)for(const t of p.pieces)for(const field of ['riding','swallowedBy'] as const){const key=t[field];if(!key)continue;const [owner,index]=key.split(':').map(Number);if(owner===i)t[field]=index===piece?`${target}:${newIndex}`:`${owner}:${index>piece?index-1:index}`;}}(sp.linked??={})[i]=target;(sp.linkedOnly??=[]).push(i);recordTargetEffect(s,i,target,id,'거머리 · 승패 연결',{kind:'link'});}
  else if(key==='duel'){const target=Number(value);(sp.duels??=[]).push({owner:i,target,end:s.players[target].baseTurns+3,done:s.players[target].pieces.filter(p=>p.node==='done').length});recordTargetEffect(s,i,target,id,'승부다! · 완주 도전',{kind:'duel',untilBaseTurn:s.players[target].baseTurns+3});}
  else if(key==='delivery')(sp.delivered??={})[i]=value;
  else if(key==='detective'){(sp.blocked??=[]).push(value);for(const choice of s.choices)if(choice.id===value&&choice.round===(s.round||1))s.players[choice.player].slots=s.players[choice.player].slots.filter(a=>a.id!==value);complete(s,i,2);}
@@ -153,7 +162,7 @@ export function resolveCustom(s:State,actor:number,value:string,rng:()=>number,n
  else if(key==='hit-player'){stats(s,Number(value)).skip=(stats(s,Number(value)).skip||0)+2;recordTargetEffect(s,i,Number(value),id,'윷을 잘 던져봐 · 차례 2회 쉬기',{untilBaseTurn:s.players[Number(value)].baseTurns+(stats(s,Number(value)).skip||0)});take(s,i,id);}
  else if(key==='wait'){const op=s.players[Number(value)],front=op.pieces.filter(p=>nodes.includes(p.node)).sort((a,b)=>a.history.length-b.history.length).at(-1);if(front)for(const piece of op.pieces)if(piece.node===front.node){piece.frozenUntil=(s.round||1)+2;piece.frozenBy=i;}if(front)recordTargetEffect(s,i,Number(value),id,'잠깐! · 앞선 말뭉치 이동 금지',{kind:'freeze',untilRound:(s.round||1)+2});take(s,i,id);}
  else if(key==='illusion'){if(!q.step)ask(s,i,id,'고양이로 바꿀 증강을 고르세요',s.players[Number(value)].slots.flatMap((a,j)=>a.remaining!==0?[{value:String(j),label:REQUESTED_AUGMENTS.find(x=>x.id===a.id)?.name||a.id}]:[]),now,'slot',{player:Number(value)});else{const slot=s.players[Number(q.data!.player)].slots[Number(value)];slot.original=slot.id;slot.modifiedBy=i;slot.restoreRound=(s.round||1)+3;slot.id='custom-cat';recordTargetEffect(s,i,Number(q.data!.player),id,'언제부터 착각한 거지? · 선택한 특성을 고양이로 변경',{kind:'illusion',slot:Number(value),untilRound:slot.restoreRound});take(s,i,id);}}
- else if(key==='necromancer'){const target=Number(value);s.forfeited=s.forfeited.filter(j=>j!==target);sp.eliminations=sp.eliminations?.filter(j=>j!==target);sp.lossGroups=sp.lossGroups?.map(g=>g.filter(j=>j!==target)).filter(g=>g.length>1);s.ranks=s.ranks.filter(j=>j!==target);s.players[target].pieces.forEach(p=>{if(p.node==='done'){p.node='home';p.history=[]}});(sp.linked??={})[i]=target;recordTargetEffect(s,i,target,id,'네크로맨서 · 부활과 승리 연결',{kind:'link'});take(s,i,id);}
+ else if(key==='necromancer'){const target=Number(value);s.forfeited=s.forfeited.filter(j=>j!==target);sp.eliminations=sp.eliminations?.filter(j=>j!==target);sp.lossGroups=sp.lossGroups?.map(g=>g.filter(j=>j!==target)).filter(g=>g.length>1);s.ranks=s.ranks.filter(j=>j!==target);if(stats(s,target).hp!==undefined&&stats(s,target).hp<=0)stats(s,target).hp=4;s.players[target].pieces.forEach(p=>{if(p.node==='done'){p.node='home';p.history=[]}});(sp.linked??={})[i]=target;recordTargetEffect(s,i,target,id,'네크로맨서 · 부활과 승리 연결',{kind:'link'});take(s,i,id);}
  else if(key==='sniper'){(s.players[i].snipe??=[]).push(value);take(s,i,id);s.throws--;}
  else if(key==='quick-hands'){st.forced=Number(value);st.forceReady=1;take(s,i,id);}
  else if(key==='bluff'){st.bluff=Number(value);st.bluffReady=1;take(s,i,id);}
@@ -161,13 +170,13 @@ export function resolveCustom(s:State,actor:number,value:string,rng:()=>number,n
  else if(key==='dilemma'){if(q.step==='first')ask(s,i,id,'두 번째 참가자를 고르세요',targets(s,i,true).filter(x=>x.value!==value),now,'second',{first:Number(value)});else{ask(s,i,id,'협력 또는 배신을 고르세요',[{value:'cooperate',label:'협력'},{value:'betray',label:'배신'}],now,'vote');if(special(s).prompt)special(s).prompt!.voters=[Number(q.data!.first),Number(value)];}}
  else {
  const [owner,index]=value.split(':').map(Number),piece=s.players[owner]?.pieces[index];
- if(q.step==='back'){const [j,k]=(q.data!.piece as string).split(':').map(Number);const p=s.players[j].pieces[k];p.node=value;p.history=p.history.slice(0,p.history.indexOf(value));take(s,i,id);}
+ if(q.step==='back'){const [j,k]=(q.data!.piece as string).split(':').map(Number);const p=s.players[j].pieces[k];p.node=value;p.history=p.history.slice(0,p.history.indexOf(value));delete p.riding;take(s,i,id);}
  else if(q.step==='ray'){const [j,k]=(q.data!.piece as string).split(':').map(Number),from=s.players[j].pieces[k].node,path=ray(s,from,value);if(key==='flick'){const victim=path.flatMap(n=>s.players.flatMap((p,v)=>p.pieces.flatMap((t,w)=>t.node===n&&v!==i?[{v,w}]:[])))[0];if(victim)effectAttack(s,i,victim.v,[victim.w],id,'알까기 · 상대 말 공격');shiftGroup(s,j,k,path[0]||from);}else{let end=from;for(const node of path){if(s.players.some(p=>p.pieces.some(t=>sameCell(s,t.node,node))))break;end=node;}shiftGroup(s,j,k,end);}take(s,i,id);sp.endTurn=true;}
  else if(!piece)return false;
  else if(['goblin','vanguard','zombie','cannon','pawn','pelican','marathon'].includes(key)){piece.kind=key;take(s,i,id);}
  else if(['holy-shield','bonfire','assassin','bomb','domain'].includes(key)){const group=s.players[owner].pieces.filter((p,j)=>j===index||sameCell(s,p.node,piece.node));for(const p of group){if(key==='holy-shield')p.shield=(p.shield||0)+1;if(key==='bonfire')p.revive=piece.node;if(key==='assassin')p.spirit=true;if(key==='bomb')p.bomb={round:(s.round||1)+6,owner:i};if(key==='domain'){p.kind='domain';p.domainEnd=s.players[i].baseTurns+2;}}take(s,i,id);}
  else if(key==='sacrifice'){piece.shield=0;killSpecial(s,i,i,index);for(const p of s.players[i].pieces)if(nodes.includes(p.node))p.shield=(p.shield||0)+1;take(s,i,id);}
- else if(key==='fusion'){s.players.forEach((op,j)=>effectAttack(s,i,j,op.pieces.flatMap((p,k)=>(j!==owner||p.node!==piece.node)&&nodes.includes(p.node)?[k]:[]),id,'3단 합체 필살기!!! · 말뭉치 공격'));take(s,i,id);sp.endTurn=true;}
+ else if(key==='fusion'){s.players.forEach((op,j)=>effectAttack(s,i,j,op.pieces.flatMap((p,k)=>(j!==owner||!sameCell(s,p.node,piece.node))&&nodes.includes(p.node)?[k]:[]),id,'3단 합체 필살기!!! · 말뭉치 공격'));take(s,i,id);sp.endTurn=true;}
  else if(key==='time-travel'){ask(s,i,id,'되돌아갈 칸을 고르세요',[...new Set(piece.history)].map(node=>({value:node,label:node==='home'?'대기칸':node})),now,'back',{piece:value});}
  else if(key==='truck'||key==='flick')ask(s,i,id,'직선 이동 방향을 고르세요',nodes.filter(n=>n!==piece.node&&ray(s,piece.node,n).length).map(node=>({value:node,label:`${node} 방향`})),now,'ray',{piece:value});
  }
@@ -181,9 +190,9 @@ export function customRoll(s:State,rng:()=>number,base:()=>Result):Result{
  if(own(s,i,'mo-do'))return rng()<.5?{name:'모',steps:5,extra:true}:{name:'도',steps:1,extra:false};
  if(st.doberman&&st.coins>=2){st.coins-=2;return {name:'모',steps:5,extra:true};}
  const count=own(s,i,'excess')?6:own(s,i,'burden')?5:own(s,i,'exchange')?3:4;
+ if(own(s,i,'dual')){const faces=[rng()<.5,rng()<.5],secondFaces=[rng()<.5,rng()<.5],n=faces.filter(Boolean).length,n2=secondFaces.filter(Boolean).length;result={name:n===2?'개':'도',steps:n===2?2:1,extra:false,sticks:faces,throwSticks:[...faces,...secondFaces]};const second=addResult(s,i,n2===2?2:1,n2===2?'개':'도');if(second)second.sticks=secondFaces;return result;}
+ if(st.loner){delete st.loner;const faces=Array.from({length:count},()=>true);faces[Math.floor(rng()*count)]=false;return fromFaces(s,i,faces);}
  if(count!==4){const faces=Array.from({length:count},()=>rng()<.5);if(count===6&&faces.every(Boolean)&&own(s,i,'no-drop')){const mask=Math.floor(rng()*63);for(let j=0;j<6;j++)faces[j]=Boolean(mask&(1<<j));}result=fromFaces(s,i,faces);}
- if(st.loner){delete st.loner;const faces=Array.from({length:count},()=>true);faces[Math.floor(rng()*count)]=false;result=fromFaces(s,i,faces);}
- if(own(s,i,'dual')){const faces=[rng()<.5,rng()<.5],secondFaces=[rng()<.5,rng()<.5],n=faces.filter(Boolean).length,n2=secondFaces.filter(Boolean).length;result={name:n===2?'개':'도',steps:n===2?2:1,extra:false,sticks:faces,throwSticks:[...faces,...secondFaces]};const second=addResult(s,i,n2===2?2:1,n2===2?'개':'도');if(second)second.sticks=secondFaces;}
  return result;
 }
 export function afterCustomThrow(s:State,result:Result,rng:()=>number,now:number){const i=s.turn,st=stats(s,i); if(st.bluffReady){delete st.bluffReady;s.pendingResults=s.pendingResults?.filter(r=>r.id!==result.id)||[];ask(s,i,'custom-bluff-resolve',`${s.players[i].name}님의 선언: ${st.bluff===-1?'빽도':['','도','개','걸','윷','모'][st.bluff]}. 진실인가요?`,[{value:'truth',label:'진실'},{value:'lie',label:'거짓'}],now,undefined,{actual:result,declared:st.bluff});if(s.special!.prompt)s.special!.prompt!.voters=targets(s,i).map(x=>Number(x.value));}if(s.special?.prompt?.id==='custom-bluff-resolve')return;st[`roll-${result.name}`]=(st[`roll-${result.name}`]||0)+1;st[`turn-roll-${result.name}`]=(st[`turn-roll-${result.name}`]||0)+1;
@@ -192,7 +201,8 @@ export function afterCustomThrow(s:State,result:Result,rng:()=>number,now:number
  if(own(s,i,'rhythm')&&result.name==='걸'){st.rhythm=(st.rhythm||0)+1;if(st.rhythm%2===0)addResult(s,i,2,'개');}
  if(own(s,i,'queen')){st.queenThrows=(st.queenThrows||0)+1;if(st.queenThrows>=12)winSpecial(s,i);}
  if(st.chalice===s.players[i].baseTurns&&result.name==='모')loseSpecial(s,i);
- for(const [j,p] of s.players[i].pieces.entries())if(p.kind==='pawn'&&p.node!=='done'){const target=destination(p,1);if(target){Object.assign(p,target);let captured=false;s.players.forEach((op,v)=>{if(v!==i&&op.pieces.some(piece=>piece.node===p.node)&&captureCustom(s,i,j,v,p.node)>0)captured=true;});if(captured)s.throws++;}}
+ for(const [j,p] of s.players[i].pieces.entries())if(active(s,i)&&p.kind==='pawn'&&p.node!=='done'&&!movementLocked(s,i,j)){const raw=destination(p,1),target=raw?transformTarget(s,i,j,raw):null;if(target){const original=p.node;Object.assign(p,target);delete p.riding;s.lastMove={id:(s.lastMove?.id||0)+1,player:i,indices:[j],path:[original,p.node],captures:[]};let captured=false;if(nodes.includes(p.node))s.players.forEach((op,v)=>{if(v!==i&&active(s,v)&&op.pieces.some(piece=>sameCell(s,piece.node,p.node))&&captureCustom(s,i,j,v,p.node)>0)captured=true;});if(captured)s.throws++;customLanding(s,i,j,original,captured,0);}}
+
 
 }
 export function customTurn(s:State,previous:number,wrapped:boolean,rng:()=>number){const sp=special(s),i=s.turn,p=s.players[i],st=stats(s,i);
@@ -210,6 +220,7 @@ export function customTurn(s:State,previous:number,wrapped:boolean,rng:()=>numbe
 }
 export function checkCustomWins(s:State){
  syncRiders(s);
+ for(let owner=0;owner<s.players.length;owner++)if(active(s,owner))for(const p of s.players[owner].pieces)if(p.kind==='pelican'&&p.node==='done')for(const victim of p.absorbed||[])loseSpecial(s,victim);
  // Recover legacy cyclic leech links by making one member independent.
  for(let i=0;i<s.players.length;i++)if(s.special?.linked?.[i]!==undefined&&!canLink(s,i,s.special.linked[i])){delete s.special.linked[i];s.special.linkedOnly=s.special.linkedOnly?.filter(j=>j!==i);log(s,'서로 연결된 거머리 관계를 정리했습니다.');}
  for(const duel of s.special?.duels||[])if(s.players[duel.target].pieces.filter(t=>t.node==='done').length>duel.done)loseSpecial(s,duel.owner);
@@ -224,11 +235,12 @@ export function checkCustomWins(s:State){
  }
 }
 export function captureCustom(s:State,i:number,index:number,victim:number,target:string):number{
- const piece=s.players[i].pieces[index],op=s.players[victim];if(own(s,i,'peace')||own(s,victim,'peace'))return 0;
+ const piece=s.players[i].pieces[index],op=s.players[victim];if(!active(s,victim)||own(s,i,'peace')||own(s,victim,'peace'))return 0;
  const indices=op.pieces.flatMap((t,j)=>sameCell(s,t.node,target)?[j]:[]);if(own(s,i,'hitchhike')&&stats(s,i).ride&&indices.length){const host=`${victim}:${indices[0]}`;let key:string|undefined=host;const seen=new Set<string>();while(key&&!seen.has(key)){seen.add(key);const [a,b]:number[]=key.split(':').map(Number);key=s.players[a]?.pieces[b]?.riding;}if(seen.has(`${i}:${index}`)||key)return 0;for(const moved of s.lastMove?.indices||[index])s.players[i].pieces[moved].riding=host;recordTargetEffect(s,i,victim,'custom-hitchhike','무임승차 · 상대 말에 업힘');return 1;}let count=0;
+ const group=s.lastMove?.player===i&&s.lastMove.indices.includes(index)?s.lastMove.indices:[index],pelicanIndex=group.find(j=>s.players[i].pieces[j]?.kind==='pelican'),infects=group.some(j=>s.players[i].pieces[j]?.kind==='zombie');
  for(const k of own(s,victim,'friend-shield')?indices.slice(0,1):indices){const enemy=op.pieces[k];const bombCarrier=s.players[i].pieces.find(p=>sameCell(s,p.node,piece.node)&&p.bomb);
- if(piece.kind==='pelican'){(piece.absorbed??=[]).push(victim);enemy.node='home';enemy.history=[];enemy.swallowedBy=`${i}:${index}`;if(bombCarrier?.bomb){enemy.bomb=bombCarrier.bomb;recordTargetEffect(s,bombCarrier.bomb.owner,victim,'custom-bomb',`폭탄 전달 · ${s.players[i].name}의 잡기로 이동`);delete bombCarrier.bomb;}count++;continue;}
- if(killSpecial(s,i,victim,k)){if(bombCarrier?.bomb){enemy.bomb=bombCarrier.bomb;recordTargetEffect(s,bombCarrier.bomb.owner,victim,'custom-bomb',`폭탄 전달 · ${s.players[i].name}의 잡기로 이동`);delete bombCarrier.bomb;}count++;if(piece.kind==='zombie')enemy.kind='zombie';}
+ if(pelicanIndex!==undefined&&!enemy.shield&&!['monster','queen','domain'].includes(enemy.kind||'')){const pelican=s.players[i].pieces[pelicanIndex];(pelican.absorbed??=[]).push(victim);enemy.node='home';enemy.history=[];enemy.swallowedBy=`${i}:${pelicanIndex}`;if(bombCarrier?.bomb){enemy.bomb=bombCarrier.bomb;recordTargetEffect(s,bombCarrier.bomb.owner,victim,'custom-bomb',`폭탄 전달 · ${s.players[i].name}의 잡기로 이동`);delete bombCarrier.bomb;}count++;continue;}
+ if(killSpecial(s,i,victim,k)){if(bombCarrier?.bomb){enemy.bomb=bombCarrier.bomb;recordTargetEffect(s,bombCarrier.bomb.owner,victim,'custom-bomb',`폭탄 전달 · ${s.players[i].name}의 잡기로 이동`);delete bombCarrier.bomb;}count++;if(infects)enemy.kind='zombie';}
  }
  if(count&&own(s,i,'treason')&&op.pieces.filter(t=>t.node==='done').length>s.players[i].pieces.filter(t=>t.node==='done').length)s.throws++;
  return count;
@@ -241,7 +253,7 @@ export function transformTarget(s:State,i:number,index:number,target:Piece):Piec
 export function customLanding(s:State,i:number,index:number,original:string,captured:boolean,finished:number){
  const p=s.players[i],piece=p.pieces[index],sp=special(s),st=stats(s,i),node=piece.node;
  if(piece.kind==='pelican'&&node==='done')for(const victim of piece.absorbed||[])loseSpecial(s,victim);
- if(captured&&s.result?.steps===-1&&own(s,i,'back-catch')){st.backCatch=(st.backCatch||0)+1;if(st.backCatch>=2)winSpecial(s,i);}
+ if(captured&&s.result?.steps===-1&&s.lastMove?.captures.some(c=>c.player!==i)&&own(s,i,'back-catch')){st.backCatch=(st.backCatch||0)+1;if(st.backCatch>=2)winSpecial(s,i);}
  if(finished){if(st.adventureEnd)st.adventureEnd+=finished;for(const queen of p.pieces)if(queen.kind==='queen')queen.life=(queen.life||1)+finished;}
  for(const hazard of [...sp.hazards||[]])if(sameCell(s,hazard.node,node)){if(hazard.kind==='garlic'&&hazard.owner===i){st.garlic=(st.garlic||0)+1;sp.hazards=sp.hazards!.filter(h=>h!==hazard);if(st.garlic>=4)winSpecial(s,i);}if(hazard.kind==='trap'&&hazard.owner!==i)killSpecial(s,hazard.owner,i,index);if(hazard.kind==='reward'){const target=destination(piece,2);if(target)Object.assign(piece,target);}}
  if(sp.reaper&&sameCell(s,sp.reaper.node,node)&&sp.reaper.owner!==i)killSpecial(s,sp.reaper.owner,i,index);
@@ -250,7 +262,7 @@ export function customLanding(s:State,i:number,index:number,original:string,capt
  checkCustomWins(s);
 }
 export function hasCustomButton(id:string){return ['custom-dog-pig','custom-hitchhike','custom-hypnosis','custom-mutual'].includes(id);}
-export function nativeChoices(s:State,i:number,index:number){const p=s.players[i]?.pieces[index];if(!p||i!==s.turn||s.special?.prompt||s.phase!=='move'||!s.result||p.nativeUsed===s.players[i].baseTurns||!nodes.includes(p.node))return [];
+export function nativeChoices(s:State,i:number,index:number){const p=s.players[i]?.pieces[index];if(!p||movementLocked(s,i,index)||i!==s.turn||s.special?.prompt||s.phase!=='move'||!s.result||p.nativeUsed===s.players[i].baseTurns||!nodes.includes(p.node))return [];
  if(p.kind==='goblin')return [{value:'forward',label:'앞으로 한 칸'},{value:'back',label:'뒤로 한 칸'}].filter(x=>destination(p,x.value==='back'?-1:1));
  if(p.kind==='cannon')return nodes.filter(n=>{const path=ray(s,p.node,n),at=path.indexOf(n);return at>=0&&path.slice(0,at).filter(cell=>s.players.some(op=>op.pieces.some(t=>sameCell(s,t.node,cell)))).length===1}).map(node=>({value:node,label:`${node}로 포 이동`}));return [];
 }

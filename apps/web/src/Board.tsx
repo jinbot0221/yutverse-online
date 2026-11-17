@@ -2,7 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import {Canvas,useThree,useFrame} from '@react-three/fiber';
 import {OrbitControls,Line} from '@react-three/drei';
 import {OrthographicCamera,Vector3,type Group,type MeshBasicMaterial} from 'three';
-import {legalMoves,position,foldedPosition,foldedPath,cellKey,sameCell,HOME,DONE,character,type State} from '@yutverse/engine';
+import {legalMoves,position,foldedPosition,foldedPath,cellKey,sameCell,HOME,DONE,character,pieceTypeName,type State} from '@yutverse/engine';
 import {ThrowSticks} from './ThrowSticks';
 import {CharacterSprite} from './CharacterSprite';
 import type {ThrowAnimation} from './throw-motion';
@@ -57,7 +57,7 @@ function Token({x,z,color,selectable,onClick,player,index,animation,characterId}
  </group>;
 }
 
-type VisibleToken={key:string;player:number;index:number;x:number;z:number;color:string;label:string;selectable:boolean;stack:number;characterId?:string;kind?:string;shield?:number;bomb?:number};
+type VisibleToken={key:string;player:number;index:number;x:number;z:number;color:string;label:string;selectable:boolean;stack:number;characterId?:string;kind?:string;kinds?:string[];shield?:number;bomb?:number};
 function ProjectLabels({tokens,elements,animation}:{tokens:VisibleToken[];elements:Map<string,HTMLDivElement>;animation:AnimationPlan|null}){
  const point=useRef(new Vector3());
  useFrame(({camera,size})=>{
@@ -93,7 +93,8 @@ export function Board({s:live,onMove,low,me,animation=null,throwAnimation=null,p
    let [x,z]=atHome?homePosition(j,i):boardPosition(piece.node);
    const shared=!atHome&&s.players.some((other,k)=>k!==j&&!s.forfeited.includes(k)&&other.pieces.some(q=>sameCell(s,q.node,piece.node)));
    if(shared){x+=(j%2===0?-.5:.5);z+=(j<2?-.3:.3);}
-   return [{key:`${j}-${i}`,player:j,index:i,x,z,color:colors[j],characterId:p.character,kind:piece.kind,shield:piece.shield,bomb:piece.bomb?.round,label:`${j===me?'나':p.name.replace(/^AI /,'AI')} · ${i+1}`,selectable:!animation&&!throwAnimation&&j===me&&s.turn===me&&legal.includes(i),stack:atHome?1:p.pieces.filter(q=>sameCell(s,q.node,piece.node)).length}];
+   const kinds=[...new Set((atHome?[piece]:p.pieces.filter(q=>sameCell(s,q.node,piece.node))).flatMap(q=>q.kind?[q.kind]:[]))];
+   return [{key:`${j}-${i}`,player:j,index:i,x,z,color:colors[j],characterId:p.character,kind:piece.kind||kinds[0],kinds,shield:piece.shield,bomb:piece.bomb?.round,label:`${j===me?'나':p.name.replace(/^AI /,'AI')} · ${i+1}`,selectable:!animation&&!throwAnimation&&j===me&&s.turn===me&&legal.includes(i),stack:atHome?1:p.pieces.filter(q=>sameCell(s,q.node,piece.node)).length}];
   });
  });
  return <div className={`board-render ${s.players.some(p=>p.pieces.length>4)?'many-tokens':''}`} data-fold={s.special?.fold||'none'} data-animating={Boolean(animation)} data-throwing={Boolean(throwAnimation)}><Canvas orthographic shadows={!low} camera={{position:[0,22,16],zoom:32,near:.1,far:150}} dpr={low?1:[1,1.5]}>
@@ -113,5 +114,5 @@ export function Board({s:live,onMove,low,me,animation=null,throwAnimation=null,p
   {throwAnimation&&<ThrowSticks animation={throwAnimation}/>}
   {previews.map((p,i)=>{const [x,z]=boardPosition(p.destination);return <mesh key={p.id} position={[x,.25,z]} rotation={[-Math.PI/2,0,0]}><ringGeometry args={[.6,.82,32]}/><meshBasicMaterial color={i===0?'#f5d270':'#66bfff'} toneMapped={false}/></mesh>})}
   <OrbitControls makeDefault enablePan={false} minZoom={10} maxZoom={90} minPolarAngle={.1} maxPolarAngle={Math.PI/2.8} target={[0,0,0]}/>
- </Canvas>{s.special?.fold&&<div className="fold-indicator">{s.special.fold==='vertical'?'세로':'가로'}로 접힌 윷판 · 진행 경로 유지</div>}<div className="token-overlay" aria-hidden="true">{tokens.map(token=><div key={token.key} ref={el=>{if(el)elements.set(token.key,el);else elements.delete(token.key)}} data-kind={token.kind} data-character={character(token.characterId).id} className={`token-label ${token.selectable?'selectable':''}`} style={{borderColor:token.color}}>{tokens.find(t=>t.player===token.player)?.key===token.key&&reactions.filter(r=>r.player===token.player).slice(-1).map(r=><span key={r.id} className="token-reaction">{r.text}</span>)}<i style={{background:token.color}}/><span className="label-caption"><span className="label-name">{token.label.slice(0,token.label.lastIndexOf(' · '))}</span><span className="label-index"><span className="label-separator"> · </span>{token.index+1}</span></span>{token.kind&&<small className="token-kind">{{goblin:'도깨비',vanguard:'선봉장',zombie:'좀비',cannon:'포',pawn:'폰',pelican:'펠리컨',kim:'김첨지',queen:'중전',monster:'괴물',star:'별',cultist:'광신도',marathon:'마라토너',domain:'영역'}[token.kind]||token.kind}</small>}{token.stack>1&&<strong className="stack-count">×{token.stack}</strong>}{token.selectable&&<em>선택</em>}</div>)}</div></div>;
+ </Canvas>{s.special?.fold&&<div className="fold-indicator">{s.special.fold==='vertical'?'세로':'가로'}로 접힌 윷판 · 진행 경로 유지</div>}<div className="token-overlay" aria-hidden="true">{tokens.map(token=><div key={token.key} ref={el=>{if(el)elements.set(token.key,el);else elements.delete(token.key)}} data-kind={token.kind} data-character={character(token.characterId).id} className={`token-label ${token.selectable?'selectable':''}`} style={{borderColor:token.color}}>{tokens.find(t=>t.player===token.player)?.key===token.key&&reactions.filter(r=>r.player===token.player).slice(-1).map(r=><span key={r.id} className="token-reaction">{r.text}</span>)}<i style={{background:token.color}}/><span className="label-caption"><span className="label-name">{token.label.slice(0,token.label.lastIndexOf(' · '))}</span><span className="label-index"><span className="label-separator"> · </span>{token.index+1}</span></span>{token.kind&&<small className="token-kind" title={token.kinds?.map(pieceTypeName).join(' · ')}>{pieceTypeName(token.kind)}{(token.kinds?.length||0)>1?` +${token.kinds!.length-1}`:''}</small>}{token.stack>1&&<strong className="stack-count">×{token.stack}</strong>}{token.selectable&&<em>선택</em>}</div>)}</div></div>;
 }
