@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createGame,selectAugment,useAugment,resolveAbility,throwYut,move,skipMove,forfeit,moveDestination,activateNative,placement,canUseAugment,REQUESTED_AUGMENTS,definition,type State,type AugmentId} from './index.ts';
+import {createGame,selectAugment,expireAbility,useAugment,resolveAbility,throwYut,move,skipMove,forfeit,moveDestination,activateNative,placement,canUseAugment,REQUESTED_AUGMENTS,definition,type State,type AugmentId} from './index.ts';
 import {acquireCustom,checkCustomWins,customTurn,killSpecial,customLanding,captureCustom,own} from './custom.ts';
 const rng=()=>.73;
 const fresh=()=>createGame(4,false,rng,0,[],'augment');
@@ -12,6 +12,7 @@ function at(s:State,owner:number,index:number,node:string,history:string[]=['hom
 function moving(s:State,owner=0,steps=1){s.turn=owner;s.phase='move';s.throws=0;s.pendingResults=[];s.result={steps,name:steps===-1?'빽도':steps===1?'도':steps===2?'개':steps===3?'걸':steps===4?'윷':'모',extra:steps>=4};return s;}
 function roll(s:State,random=rng){s.phase='throw';s.throws=1;return throwYut(s,random,0);}
 const cases:Record<string,()=>void>={
+ brawl(){let s=fresh();at(s,0,0,'o1');at(s,1,0,'o3');grant(s,'brawl');assert.ok(s.special!.brawl);let now=2000,count=0;while(s.special?.brawl){assert.ok(count++<8);const q=s.special.prompt!;s=s.special!.brawl!.finished?expireAbility(s,q.deadline+1,rng):resolveAbility(s,q.owner,q.options[0].value,rng,now);now+=2000;}assert.equal(s.round,1);assert.equal(s.turn,0);},
  truck(){let s=fresh();at(s,0,0,'o1');at(s,0,1,'o1');at(s,1,0,'o4');s=cast(s,'truck','0:0','o2');assert.equal(s.players[0].pieces[0].node,'o3');assert.equal(s.players[0].pieces[1].node,'o3');assert.equal(s.turn,1);},
  fusion(){let s=fresh();for(let n=0;n<3;n++)at(s,0,n,'o1');at(s,0,3,'o5');at(s,1,0,'o2');s=cast(s,'fusion','0:0');assert.equal(s.players[0].pieces.filter(p=>p.node==='o1').length,3);assert.equal(s.players[0].pieces[3].node,'home');assert.equal(s.players[1].pieces[0].node,'home');},
  dogs(){let s=fresh();for(let n=0;n<3;n++)s=cast(s,'dogs');assert.equal(s.pendingResults!.filter(r=>r.steps===2).length,3);assert.equal(canUseAugment(s,0,'custom-dogs'),false);},

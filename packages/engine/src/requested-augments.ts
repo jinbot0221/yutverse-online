@@ -78,6 +78,7 @@ const start:[string,string,number,boolean][]=[
  ['sole','천상천하 유아독존',-1,false],
 ];
 const late:[string,string,number,boolean][]=[
+ ['brawl','판 위의 대난투',1,false],
  ['777','777',-1,false],
  ['no-friends','나만 친구 없어',-1,false],
  ['summon','마신 소환',-1,false],

@@ -1,10 +1,11 @@
+import {beginBrawl,resolveBrawl,BRAWL_ID,type BrawlState} from './brawl.ts';
 import {recordTargetEffect,type TargetEffect} from './target-effects.ts';
 import {foldedPosition,sameCell,cellKey} from './fold.ts';
 import {dilemmaReward,type DilemmaChoice} from './dilemma.ts';
 import {destination,moveDestination,position,type State,type Piece,type Result} from './index.ts';
 import {REQUESTED_AUGMENTS} from './requested-augments.ts';
 export type Prompt={owner:number;id:string;title:string;options:{value:string;label:string}[];deadline:number;step?:string;data?:Record<string,unknown>;answers?:Record<number,string>;voters?:number[]};
-export type SpecialState={targetHistory?:TargetEffect[];targetSerial?:number;checkpoint?:boolean;acquireQueue?:{player:number;id:string}[];prompt?:Prompt;endTurn?:boolean;consumeResult?:boolean;rotation?:number;fold?:'horizontal'|'vertical';catForced?:boolean;blocked?:string[];delivered?:Record<number,string>;reaper?:{owner:number;node:string};hazards?:{owner:number;node:string;kind:'poop'|'trap'|'reward'|'garlic'}[];fogUntil?:number;fogOwner?:number;doubleTurns?:boolean;extraTurn?:boolean;linkedOnly?:number[];linked?:Record<number,number>;placements?:Record<number,number>;fixedRanks?:Record<number,number>;eliminations?:number[];lossGroups?:number[][];soleWinner?:number;wins?:number[][];attackHp?:boolean;mindGame?:{owner:number;round:number;offers:string[];choices:Record<number,string>};duels?:{owner:number;target:number;end:number;done:number}[]};
+export type SpecialState={brawl?:BrawlState;targetHistory?:TargetEffect[];targetSerial?:number;checkpoint?:boolean;acquireQueue?:{player:number;id:string}[];prompt?:Prompt;endTurn?:boolean;consumeResult?:boolean;rotation?:number;fold?:'horizontal'|'vertical';catForced?:boolean;blocked?:string[];delivered?:Record<number,string>;reaper?:{owner:number;node:string};hazards?:{owner:number;node:string;kind:'poop'|'trap'|'reward'|'garlic'}[];fogUntil?:number;fogOwner?:number;doubleTurns?:boolean;extraTurn?:boolean;linkedOnly?:number[];linked?:Record<number,number>;placements?:Record<number,number>;fixedRanks?:Record<number,number>;eliminations?:number[];lossGroups?:number[][];soleWinner?:number;wins?:number[][];attackHp?:boolean;mindGame?:{owner:number;round:number;offers:string[];choices:Record<number,string>};duels?:{owner:number;target:number;end:number;done:number}[]};
 export const nodes=[...Array.from({length:20},(_,i)=>`o${i+1}`),'a1','a2','b1','b2','c','d1','d2','e1','e2'];
 export const active=(s:State,i:number)=>Boolean(s.players[i])&&!s.ranks.includes(i)&&!s.forfeited.includes(i);
 export const own=(s:State,i:number,key:string)=>Boolean(s.players[i]?.slots.some(a=>a.id===`custom-${key}`&&a.remaining!==0));
@@ -49,6 +50,7 @@ export function syncRiders(s:State){
 }
 export function acquireCustom(s:State,i:number,id:string,rng:()=>number,now:number){
  if(!id.startsWith('custom-'))return;const key=id.slice(7),sp=special(s),p=s.players[i],st=stats(s,i);const def=REQUESTED_AUGMENTS.find(a=>a.id===id);if(def&&!def.manual&&def.charges>0)take(s,i,id);
+ if(key==='brawl')beginBrawl(s,i,now);
  if(key==='cat-lover'&&s.players.some(p=>p.slots.some(a=>a.id==='custom-cat')))winSpecial(s,i);
  if(key==='no-friends'){for(const k of Object.keys(st))if(k.startsWith('caught-'))delete st[k];st.noFriendsMask=s.players.reduce((mask,_,j)=>j!==i&&active(s,j)?mask|(1<<j):mask,0);}
  if(key==='coup')st.coupKills=0;
@@ -140,6 +142,7 @@ function rotatePieces(s:State,turns:number){for(const op of s.players)for(const 
 function nearest(x:number,y:number){return [...nodes].sort((a,b)=>{const u=position(a),v=position(b);return Math.hypot(u[0]-x,u[1]-y)-Math.hypot(v[0]-x,v[1]-y)})[0]}
 function ray(s:State,from:string,to:string){const a=foldedPosition(from,s.special?.fold),b=foldedPosition(to,s.special?.fold),dx=b[0]-a[0],dy=b[1]-a[1];if(Math.hypot(dx,dy)<.05)return [];if(Math.abs(dx)>.05&&Math.abs(dy)>.05&&Math.abs(Math.abs(dx)-Math.abs(dy))>.05)return [];return nodes.filter(n=>{const p=foldedPosition(n,s.special?.fold),vx=p[0]-a[0],vy=p[1]-a[1];return n!==from&&Math.abs(dx*vy-dy*vx)<.09&&dx*vx+dy*vy>0}).sort((u,v)=>{const p=foldedPosition(u,s.special?.fold),q=foldedPosition(v,s.special?.fold);return Math.hypot(p[0]-a[0],p[1]-a[1])-Math.hypot(q[0]-a[0],q[1]-a[1])}).filter((node,index,list)=>list.findIndex(other=>sameCell(s,node,other))===index).map(node=>sameCell(s,node,to)?to:node)}
 export function resolveCustom(s:State,actor:number,value:string,rng:()=>number,now:number):boolean{
+ if(s.special?.prompt?.id===BRAWL_ID)return resolveBrawl(s,actor,value,now);
  const sp=special(s),q=sp.prompt;if(!q||!(q.voters?q.voters.includes(actor)&&!Object.hasOwn(q.answers||{},actor):q.owner===actor)||!q.options.some(x=>x.value===value)||now>=q.deadline)return false;
  const i=q.owner,id=q.id,key=id.slice(7),st=stats(s,i);delete sp.prompt;
  if(q.voters){q.answers??={};q.answers[actor]=value;if(q.voters.some(j=>!Object.hasOwn(q.answers!,j))){sp.prompt=q;return true;}
